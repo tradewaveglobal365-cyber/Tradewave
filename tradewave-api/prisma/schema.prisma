@@ -1,0 +1,263 @@
+// Tradewave — Phase 1 schema (auth + referral capture)
+// Contract mirror: src/modules/*/schemas.ts
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum TokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum PropertyStatus {
+  DRAFT
+  OPEN
+  FUNDED
+  CLOSED
+}
+
+enum InvestmentStatus {
+  ACTIVE
+  MATURED
+  CANCELLED
+}
+
+enum DepositStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  ABANDONED
+}
+
+enum LedgerEntryType {
+  DEPOSIT
+  INVESTMENT
+  RETURN_PAYOUT
+  REFERRAL_BONUS
+  WITHDRAWAL
+  ADJUSTMENT
+}
+
+model User {
+  id           String @id @default(uuid()) @db.Uuid
+  email        String @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  country      String @default("AE")
+
+  status          UserStatus @default(PENDING_VERIFICATION)
+  role            Role       @default(USER)
+  emailVerifiedAt DateTime?
+
+  // Referral — written in the same transaction as user creation, never updated after.
+  referralCode String  @unique
+  referredById String? @db.Uuid
+  referredBy   User?   @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals    User[]  @relation("Referrals")
+  referredAt   DateTime?
+
+  // Lockout
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+
+  sessions    Session[]
+  tokens      VerificationToken[]
+  wallet      Wallet?
+  investments Investment[]
+  deposits    Deposit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([referredById])
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @db.Uuid
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String    @unique // sha256 of the raw token; the raw value is never stored
+  familyId         String    @db.Uuid // rotation lineage, for reuse detection
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  userAgent        String?
+  ipAddress        String?
+  createdAt        DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+model VerificationToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  type       TokenType
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, type])
+}
+
+model LoginAttempt {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String
+  ipAddress String
+  success   Boolean
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ipAddress, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2 — properties, wallet, fractional investment
+//
+// All money is an integer number of FILS held as BigInt. Never a float, never a
+// JS number in this layer. See src/lib/money.ts for the reasoning.
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Property {
+  id          String @id @default(uuid()) @db.Uuid
+  slug        String @unique
+  title       String
+  summary     String
+  description String
+  addressLine String
+  area        String // e.g. "Downtown Dubai"
+  city        String // e.g. "Dubai"
+  country     String @default("AE")
+  images      String[]
+
+  totalValueFils    BigInt
+  minInvestmentFils BigInt
+  // Denormalised funding total. ONLY ever written inside the invest
+  // transaction, via a conditional UPDATE that cannot oversubscribe.
+  fundedFils        BigInt @default(0)
+
+  annualReturnBps Int // 1800 = 18.00% per annum
+  termMonths      Int
+
+  status          PropertyStatus @default(DRAFT)
+  fundingClosesAt DateTime?
+
+  investments Investment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+model Investment {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  propertyId String   @db.Uuid
+  property   Property @relation(fields: [propertyId], references: [id])
+
+  principalFils BigInt
+
+  // Snapshot of the property terms at purchase time — deliberately NOT read
+  // back from Property. Editing a property's rate later must never change the
+  // terms an existing investor already agreed to.
+  annualReturnBps Int
+  termMonths      Int
+
+  status     InvestmentStatus @default(ACTIVE)
+  investedAt DateTime         @default(now())
+  maturesAt  DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([propertyId])
+}
+
+model Wallet {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Cached balance. NEVER written outside the same transaction as its
+  // LedgerEntry — a balance that has drifted from its history is unauditable.
+  balanceFils BigInt @default(0)
+
+  entries LedgerEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model LedgerEntry {
+  id       String @id @default(uuid()) @db.Uuid
+  walletId String @db.Uuid
+  wallet   Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  type             LedgerEntryType
+  amountFils       BigInt // signed: credit positive, debit negative
+  balanceAfterFils BigInt // snapshot, so a row can be audited in isolation
+
+  // Idempotency key. A replayed payment webhook cannot double-credit, because
+  // the second insert violates this constraint at the database level.
+  reference   String @unique
+  description String
+
+  investmentId String? @db.Uuid
+  depositId    String? @db.Uuid
+
+  createdAt DateTime @default(now())
+
+  @@index([walletId, createdAt])
+}
+
+model Deposit {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  amountFils  BigInt
+  status      DepositStatus @default(PENDING)
+  provider    String        @default("paystack")
+  providerRef String        @unique
+  paidAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+// Append-only rate history rather than one mutable row, so a historical display
+// can be reproduced and a bad rate edit is recoverable.
+model FxRate {
+  id            String   @id @default(uuid()) @db.Uuid
+  baseCurrency  String   @default("AED")
+  quoteCurrency String   @default("USD")
+  filsPerUnit   BigInt // fils per 1 USD. AED is pegged at 3.6725 -> 36725 (x100 scale)
+  effectiveAt   DateTime @default(now())
+
+  @@index([baseCurrency, quoteCurrency, effectiveAt])
+}
