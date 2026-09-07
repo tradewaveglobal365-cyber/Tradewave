@@ -1,4 +1,5 @@
-import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { env } from '../config/env';
 
 /**
  * Opaque tokens (email verification, password reset, refresh tokens).
@@ -16,6 +17,23 @@ export function generateToken(): string {
 
 export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+
+/**
+ * Keyed digest for government identifiers (NIN, BVN, passport numbers).
+ *
+ * Deliberately NOT hashToken(). That function's justification above — 256 bits of
+ * real entropy, nothing to brute-force — does not carry over. An 11-digit NIN has
+ * only 10^11 possible values, roughly 2^36.5, so a plain sha256 of one is
+ * reversible by exhaustive search in seconds on a laptop. Storing that would be
+ * storing the NIN.
+ *
+ * The pepper is a server-side secret held outside the database, so a dump of the
+ * KycVerification table on its own yields nothing. HMAC rather than argon2 because
+ * this value has to stay indexable — duplicate detection compares it at write time.
+ */
+export function hashIdentifier(value: string): string {
+  return createHmac('sha256', env.KYC_ID_PEPPER).update(value).digest('hex');
 }
 
 /** Constant-time compare of two hex digests. */

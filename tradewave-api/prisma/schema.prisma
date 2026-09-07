@@ -25,6 +25,28 @@ enum TokenType {
   PASSWORD_RESET
 }
 
+/// Identity verification is deliberately NOT folded into UserStatus. A user can be
+/// ACTIVE (email confirmed) and un-verified at the same time — one enum cannot hold
+/// both, and a KYC rejection must not clobber state that email verification owns.
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  VERIFIED
+  REJECTED
+  /// Provider never answered, or the session timed out. Retryable, and
+  /// deliberately distinct from REJECTED: a timeout is not a failed check, must
+  /// not read as one to the user, and must not consume a retry.
+  EXPIRED
+}
+
+/// NIN is the only type accepted today. The others exist so adding them later is a
+/// value on an existing enum rather than a reshape of the model.
+enum DocumentType {
+  NIN
+  PASSPORT
+  EMIRATES_ID
+}
+
 enum PropertyStatus {
   DRAFT
   OPEN
@@ -55,23 +77,25 @@ enum LedgerEntryType {
 }
 
 model User {
-  id           String @id @default(uuid()) @db.Uuid
-  email        String @unique
+  id           String  @id @default(uuid()) @db.Uuid
+  email        String  @unique
   passwordHash String
   firstName    String
   lastName     String
   phone        String?
-  country      String @default("AE")
+  country      String  @default("AE")
 
   status          UserStatus @default(PENDING_VERIFICATION)
   role            Role       @default(USER)
   emailVerifiedAt DateTime?
+  kycStatus       KycStatus  @default(NOT_STARTED)
+  kycVerifiedAt   DateTime?
 
   // Referral — written in the same transaction as user creation, never updated after.
-  referralCode String  @unique
-  referredById String? @db.Uuid
-  referredBy   User?   @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
-  referrals    User[]  @relation("Referrals")
+  referralCode String    @unique
+  referredById String?   @db.Uuid
+  referredBy   User?     @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals    User[]    @relation("Referrals")
   referredAt   DateTime?
 
   // Lockout
@@ -79,11 +103,12 @@ model User {
   lockedUntil      DateTime?
   lastLoginAt      DateTime?
 
-  sessions    Session[]
-  tokens      VerificationToken[]
-  wallet      Wallet?
-  investments Investment[]
-  deposits    Deposit[]
+  sessions         Session[]
+  tokens           VerificationToken[]
+  wallet           Wallet?
+  investments      Investment[]
+  deposits         Deposit[]
+  kycVerifications KycVerification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -120,6 +145,38 @@ model VerificationToken {
   @@index([userId, type])
 }
 
+/// One row per verification attempt, rather than only a status field on User.
+/// Retry-after-rejection needs history, webhooks need providerRef to stay
+/// idempotent under retry, and "which document did they pass with" is an audit
+/// question that eventually gets asked.
+model KycVerification {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Which driver produced this decision: "stub" today, a vendor name later.
+  provider    String
+  /// The vendor's own id for the attempt. Unique so a replayed webhook cannot
+  /// apply twice. Null under the stub driver, which has no remote counterpart.
+  providerRef String? @unique
+
+  documentType  DocumentType
+  /// Display only, e.g. "4821" rendered as ****4821.
+  documentLast4 String
+  /// sha256 of the raw number. The raw value is never stored — see
+  /// src/modules/kyc/kyc.service.ts. The index enforces one document, one account.
+  documentHash  String
+
+  status          KycStatus
+  rejectionReason String?
+
+  submittedAt DateTime  @default(now())
+  decidedAt   DateTime?
+
+  @@index([userId, status])
+  @@index([documentHash])
+}
+
 model LoginAttempt {
   id        String   @id @default(uuid()) @db.Uuid
   email     String
@@ -139,15 +196,15 @@ model LoginAttempt {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Property {
-  id          String @id @default(uuid()) @db.Uuid
-  slug        String @unique
+  id          String   @id @default(uuid()) @db.Uuid
+  slug        String   @unique
   title       String
   summary     String
   description String
   addressLine String
   area        String // e.g. "Downtown Dubai"
   city        String // e.g. "Dubai"
-  country     String @default("AE")
+  country     String   @default("AE")
   images      String[]
 
   totalValueFils    BigInt

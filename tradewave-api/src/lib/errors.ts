@@ -49,6 +49,24 @@ export const emailNotVerified = () =>
 export const accountSuspended = () =>
   new AppError(403, 'ACCOUNT_SUSPENDED', 'This account has been suspended. Contact support.');
 
+export const kycRequired = (
+  message = 'Verify your identity before you can invest.',
+) => new AppError(403, 'KYC_REQUIRED', message);
+
+export const documentAlreadyVerified = () =>
+  new AppError(
+    409,
+    'DOCUMENT_ALREADY_VERIFIED',
+    'This document is already linked to a verified account.',
+  );
+
+export const kycPending = () =>
+  new AppError(
+    403,
+    'KYC_PENDING',
+    'Your identity check is still being reviewed. We will email you when it completes.',
+  );
+
 export const forbidden = (message = 'You do not have access to this resource.') =>
   new AppError(403, 'FORBIDDEN', message);
 

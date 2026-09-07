@@ -30,7 +30,13 @@ beforeEach(async () => {
   verifyUrls.length = 0;
 });
 
-/** Registers, verifies, and funds a wallet. Returns an authenticated agent. */
+/**
+ * Registers, verifies email AND identity, and funds a wallet. Returns an
+ * authenticated agent.
+ *
+ * Identity is set directly rather than through the KYC endpoint: these tests are
+ * about investment mechanics, and the gate itself is covered in kyc.test.ts.
+ */
 async function createFundedUser(email: string, balance: string) {
   await request(app).post('/api/v1/auth/register').set('Origin', ORIGIN).send({
     firstName: 'Test',
@@ -42,6 +48,11 @@ async function createFundedUser(email: string, balance: string) {
   const agent = request.agent(app);
   const res = await agent.post('/api/v1/auth/verify-email').set('Origin', ORIGIN).send({ token });
   const userId = res.body.user.id as string;
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { kycStatus: 'VERIFIED', kycVerifiedAt: new Date() },
+  });
 
   const wallet = await prisma.wallet.upsert({
     where: { userId },

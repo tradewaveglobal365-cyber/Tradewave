@@ -39,6 +39,7 @@ export interface PublicUser {
   status: User['status'];
   role: User['role'];
   emailVerified: boolean;
+  kycStatus: User['kycStatus'];
   referralCode: string;
   createdAt: Date;
 }
@@ -54,6 +55,7 @@ export function toPublicUser(user: User): PublicUser {
     status: user.status,
     role: user.role,
     emailVerified: user.emailVerifiedAt !== null,
+    kycStatus: user.kycStatus,
     referralCode: user.referralCode,
     createdAt: user.createdAt,
   };

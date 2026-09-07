@@ -55,4 +55,17 @@ export const resendVerificationLimiter = limiter({
 });
 
 /** Broad backstop for everything else. */
+/**
+ * Identity checks cost real money per call. This is the coarse front line; the
+ * cap that actually binds lives in modules/kyc/kyc.service.ts, because this
+ * limiter is memory-backed and skipped under test.
+ *
+ * Keys on the authenticated user, so it MUST be mounted after requireAuth.
+ */
+export const kycSubmitLimiter = limiter({
+  windowMs: 24 * 60 * 60 * 1000,
+  limit: 5,
+  keyGenerator: (req) => req.auth?.userId ?? req.ip ?? 'unknown',
+});
+
 export const globalLimiter = limiter({ windowMs: 15 * 60 * 1000, limit: 300 });

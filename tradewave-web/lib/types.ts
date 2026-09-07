@@ -10,6 +10,21 @@
  */
 
 export type UserStatus = 'PENDING_VERIFICATION' | 'ACTIVE' | 'SUSPENDED';
+
+/**
+ * Identity verification, tracked separately from UserStatus because the two are
+ * independent: a user can be ACTIVE (email confirmed) and still unverified.
+ * EXPIRED means the provider never answered — retryable, and deliberately not
+ * worded to the user as a failure.
+ */
+export type KycStatus =
+  | 'NOT_STARTED'
+  | 'PENDING'
+  | 'VERIFIED'
+  | 'REJECTED'
+  | 'EXPIRED';
+
+export type KycDocumentType = 'NIN' | 'PASSPORT' | 'EMIRATES_ID';
 export type Role = 'USER' | 'ADMIN';
 
 export interface PublicUser {
@@ -22,6 +37,7 @@ export interface PublicUser {
   status: UserStatus;
   role: Role;
   emailVerified: boolean;
+  kycStatus: KycStatus;
   referralCode: string;
   createdAt: string;
 }
@@ -103,4 +119,14 @@ export interface PropertyList {
   page: number;
   perPage: number;
   totalPages: number;
+}
+
+export interface KycStatusView {
+  status: KycStatus;
+  documentLast4: string | null;
+  reason: string | null;
+  submittedAt: string | null;
+  decidedAt: string | null;
+  canRetry: boolean;
+  attemptsRemaining: number;
 }

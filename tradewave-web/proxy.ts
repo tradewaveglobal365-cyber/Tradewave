@@ -13,6 +13,7 @@ const PROTECTED_PREFIXES = [
   '/referrals',
   '/documents',
   '/settings',
+  '/verify-identity',
 ];
 const AUTH_PAGES = ['/login', '/signup', '/forgot-password'];
 

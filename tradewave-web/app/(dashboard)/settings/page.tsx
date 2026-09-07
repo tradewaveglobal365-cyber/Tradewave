@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+import Link from 'next/link';
 import { BadgeCheck, Banknote, ShieldCheck } from 'lucide-react';
 import { getCurrentUser } from '@/lib/session';
 import { PageHeader } from '@/components/dashboard/page-header';
@@ -35,13 +36,33 @@ export default async function SettingsPage() {
             doneLabel="Email verified"
             todoLabel="Email not verified"
           />
-          {/* KYC lands with the backend. UserStatus is where the gate goes —
-              requireActive in the API already reads it. */}
-          <StatusRow done={false} doneLabel="Identity verified" todoLabel="Identity not verified" />
-          <p className="mt-3 rounded-lg border border-dashed border-hairline bg-canvas px-3.5 py-3 text-[0.75rem] leading-relaxed text-muted-foreground">
-            Identity verification isn&rsquo;t available yet. It will gate investing once the
-            provider is connected.
-          </p>
+          {/* kycStatus is its own field, not a UserStatus case: a user can be
+              ACTIVE and unverified at once, and verifyEmail/resetPassword both
+              write status:'ACTIVE' as a side effect. */}
+          <StatusRow
+            done={user.kycStatus === 'VERIFIED'}
+            doneLabel="Identity verified"
+            todoLabel={
+              user.kycStatus === 'PENDING'
+                ? 'Identity under review'
+                : 'Identity not verified'
+            }
+          />
+          {user.kycStatus !== 'VERIFIED' ? (
+            <p className="mt-3 text-[0.8125rem] text-muted-foreground">
+              <Link
+                href="/verify-identity"
+                className="font-medium text-brand-700 underline-offset-4 hover:underline"
+              >
+                {user.kycStatus === 'PENDING'
+                  ? 'Check verification status'
+                  : user.kycStatus === 'NOT_STARTED'
+                    ? 'Verify your identity'
+                    : 'Try verifying again'}
+              </Link>{' '}
+              to unlock investing.
+            </p>
+          ) : null}
         </Card>
 
         <Card

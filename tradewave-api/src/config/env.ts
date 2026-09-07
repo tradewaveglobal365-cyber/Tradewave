@@ -28,13 +28,32 @@ const envSchema = z.object({
   // from whatever address happened to be committed.
   EMAIL_FROM: z.string().min(1, 'EMAIL_FROM is required'),
 
+  // Empty string selects the stub identity driver (see services/kyc). Set once a
+  // provider contract exists; until then submissions queue as PENDING in prod.
+  KYC_PROVIDER_API_KEY: z.string().default(''),
+  // Server-side pepper for hashing government ID numbers. An 11-digit NIN has too
+  // little entropy to survive an unkeyed hash, so this secret is what stands
+  // between a database dump and every user's ID number. See lib/crypto.
+  KYC_ID_PEPPER: z.string().default(''),
+
   WEB_ORIGIN: z.string().url(),
   // Empty in development; ".tradewave.com" in production so the cookie is
   // shared between tradewave.com and api.tradewave.com.
   COOKIE_DOMAIN: z.string().default(''),
 });
 
-const parsed = envSchema.safeParse(process.env);
+const parsed = envSchema
+  .superRefine((cfg, ctx) => {
+    if (cfg.NODE_ENV === 'production' && cfg.KYC_ID_PEPPER.length < 32) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['KYC_ID_PEPPER'],
+        message:
+          'KYC_ID_PEPPER must be at least 32 characters in production — ID hashes are worthless without it',
+      });
+    }
+  })
+  .safeParse(process.env);
 
 if (!parsed.success) {
   const issues = parsed.error.issues

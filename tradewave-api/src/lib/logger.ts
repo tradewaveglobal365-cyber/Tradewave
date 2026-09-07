@@ -9,6 +9,9 @@ export const logger = pino({
       'req.body.password',
       'req.body.newPassword',
       'req.body.currentPassword',
+      // pino-http logs request bodies outside production; without this a NIN
+      // lands in stdout on the first identity submission.
+      'req.body.documentNumber',
       'req.headers.authorization',
       'req.headers.cookie',
       'res.headers["set-cookie"]',

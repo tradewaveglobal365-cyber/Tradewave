@@ -12,3 +12,5 @@ process.env.WEB_ORIGIN = 'http://localhost:3000';
 process.env.RESEND_API_KEY = '';
 process.env.EMAIL_FROM = 'Tradewave <noreply@test.invalid>';
 process.env.COOKIE_DOMAIN = '';
+process.env.KYC_PROVIDER_API_KEY = '';
+process.env.KYC_ID_PEPPER = 'test-pepper-that-is-long-enough-32-chars';

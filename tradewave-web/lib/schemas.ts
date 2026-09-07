@@ -68,3 +68,22 @@ export type SignupValues = z.input<typeof signupSchema>;
 export type LoginValues = z.input<typeof loginSchema>;
 export type ForgotPasswordValues = z.input<typeof forgotPasswordSchema>;
 export type ResetPasswordValues = z.input<typeof resetPasswordSchema>;
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * CONTRACT MIRROR of tradewave-api/src/modules/kyc/schemas.ts
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+export const submitKycSchema = z.object({
+  documentNumber: z
+    .string()
+    .trim()
+    .regex(/^\d{11}$/, 'A NIN is exactly 11 digits'),
+  // boolean().refine rather than literal(true): literal makes the INPUT type
+  // `true`, so the unchecked default state becomes untypeable.
+  consent: z
+    .boolean()
+    .refine((v) => v, 'You need to agree before we can verify your identity'),
+});
+
+export type SubmitKycValues = z.input<typeof submitKycSchema>;

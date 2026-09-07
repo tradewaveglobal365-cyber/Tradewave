@@ -16,7 +16,7 @@ export function migrateTestDatabase(): void {
 export async function resetDatabase(): Promise<void> {
   // Order matters only without CASCADE; RESTART IDENTITY keeps runs comparable.
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "LoginAttempt", "VerificationToken", "Session", "User" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "KycVerification", "LoginAttempt", "VerificationToken", "Session", "User" RESTART IDENTITY CASCADE',
   );
 }
 

@@ -29,13 +29,15 @@ export function SetupChecklist({
   user,
   hasBalance,
   hasPayoutAccount = false,
-  kycVerified = false,
 }: {
   user: PublicUser;
   hasBalance: boolean;
   hasPayoutAccount?: boolean;
-  kycVerified?: boolean;
 }) {
+  // Derived from the user rather than passed separately: the previous
+  // `kycVerified` prop was never supplied by any caller, so the step silently
+  // sat at false forever.
+  const kyc = user.kycStatus;
   const steps: Step[] = [
     {
       id: 'email',
@@ -49,10 +51,16 @@ export function SetupChecklist({
     {
       id: 'kyc',
       label: 'Verify your identity',
-      description: 'Required before you can invest.',
+      description:
+        kyc === 'PENDING'
+          ? "We're reviewing your details. We'll email you when it completes."
+          : kyc === 'REJECTED'
+            ? 'That document could not be verified. Try again.'
+            : 'Required before you can invest.',
       icon: BadgeCheck,
-      done: kycVerified,
-      pending: true,
+      done: kyc === 'VERIFIED',
+      href: '/verify-identity',
+      cta: kyc === 'PENDING' ? 'View' : kyc === 'NOT_STARTED' ? 'Verify' : 'Retry',
     },
     {
       id: 'payout',

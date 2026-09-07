@@ -97,6 +97,14 @@ export function InvestPanel({
     } catch (err) {
       if (err instanceof ApiError && err.code === 'INSUFFICIENT_FUNDS') {
         setSubmitError('Your wallet balance is not enough. Fund your wallet and try again.');
+      } else if (err instanceof ApiError && err.code === 'KYC_REQUIRED') {
+        setSubmitError(
+          'Verify your identity before investing — you can do it from Settings in about a minute.',
+        );
+      } else if (err instanceof ApiError && err.code === 'KYC_PENDING') {
+        setSubmitError(
+          "We're still reviewing your identity check. You'll be able to invest as soon as it clears.",
+        );
       } else {
         setSubmitError(errorMessage(err));
       }
