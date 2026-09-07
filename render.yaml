@@ -10,7 +10,11 @@ services:
     runtime: node
     plan: free
     rootDir: tradewave-api
-    buildCommand: npm ci && npm run db:deploy && npm run build
+    # --include=dev is required: NODE_ENV=production makes npm ci omit
+    # devDependencies, which is where every @types/* package lives. tsc itself
+    # survives as a transitive dep, so without this the build runs and fails with
+    # "Could not find a declaration file" for express, cors, jsonwebtoken, etc.
+    buildCommand: npm ci --include=dev && npm run db:deploy && npm run build
     startCommand: npm start
     healthCheckPath: /health
     autoDeploy: true
