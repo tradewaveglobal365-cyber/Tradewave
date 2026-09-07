@@ -1,7 +1,26 @@
 import type { ApiErrorBody } from './types';
 
-export const API_URL =
+/**
+ * Two different base URLs, because the two runtimes have different constraints.
+ *
+ * Browser: a relative path in production ('/api/v1'), so requests go to this same
+ * origin and Next rewrites them to the API. The session cookie then comes back
+ * first-party and the browser keeps it. An absolute cross-domain URL here would
+ * make the SameSite=Lax cookie third-party, and it would be silently dropped.
+ *
+ * Server: must be absolute — Node's fetch rejects relative URLs. Server Components
+ * forward the Cookie header explicitly (see session.ts), so they can call the API
+ * directly and skip the proxy hop.
+ */
+const BROWSER_API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4001/api/v1';
+
+const SERVER_API_URL = process.env.API_ORIGIN
+  ? `${process.env.API_ORIGIN}/api/v1`
+  : BROWSER_API_URL;
+
+export const API_URL =
+  typeof window === 'undefined' ? SERVER_API_URL : BROWSER_API_URL;
 
 /** Mirrors the API's error envelope so forms can map fields back to inputs. */
 export class ApiError extends Error {

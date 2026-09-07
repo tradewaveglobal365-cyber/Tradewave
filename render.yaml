@@ -1,0 +1,46 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Migrations run in buildCommand rather than as a preDeployCommand because
+# pre-deploy is a paid-plan feature. Putting them here means a failed migration
+# fails the build, so the old version keeps serving instead of new code starting
+# against an unmigrated database.
+services:
+  - type: web
+    name: tradewave-api
+    runtime: node
+    plan: free
+    rootDir: tradewave-api
+    buildCommand: npm ci && npm run db:deploy && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Supabase gives two strings. Pooled (6543) at runtime; direct (5432) for
+      # migrations — PgBouncer cannot run them. See tradewave-api/prisma.config.ts.
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+
+      # Generated once by Render. Changing it invalidates every live session.
+      - key: JWT_SECRET
+        generateValue: true
+
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+
+      # The Vercel production URL, scheme included and no trailing slash.
+      # Used for CORS, the CSRF origin check, and links inside emails.
+      - key: WEB_ORIGIN
+        sync: false
+
+      # Deliberately empty. The browser receives the cookie via the Vercel
+      # rewrite, so it scopes to the Vercel origin on its own. Setting a domain
+      # here would scope it to the API's domain and the browser would drop it.
+      - key: COOKIE_DOMAIN
+        value: ""
