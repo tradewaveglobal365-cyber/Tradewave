@@ -43,6 +43,25 @@ services:
       - key: WEB_ORIGIN
         sync: false
 
+      # Identity verification (Didit). All three or none — env.ts refuses a
+      # half-configured provider, because sessions would start that no decision
+      # could ever resolve. Leave unset to keep the stub driver.
+      - key: DIDIT_API_KEY
+        sync: false
+      - key: DIDIT_WORKFLOW_ID
+        sync: false
+      # Shown once when the webhook destination is created. Store it then.
+      - key: DIDIT_WEBHOOK_SECRET
+        sync: false
+
+      # Peppers the hash of government ID numbers. An 11-digit NIN has too little
+      # entropy to survive an unkeyed digest, so this is what stands between a
+      # database dump and every user's ID number.
+      # ⚠️ Rotating this orphans every existing documentHash — duplicate
+      # detection silently stops working for rows written before the change.
+      - key: KYC_ID_PEPPER
+        generateValue: true
+
       # Deliberately empty. The browser receives the cookie via the Vercel
       # rewrite, so it scopes to the Vercel origin on its own. Setting a domain
       # here would scope it to the API's domain and the browser would drop it.

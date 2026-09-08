@@ -68,4 +68,10 @@ export const kycSubmitLimiter = limiter({
   keyGenerator: (req) => req.auth?.userId ?? req.ip ?? 'unknown',
 });
 
+/**
+ * Generous and IP-keyed: providers retry hard and can burst. The real protection
+ * on this route is the HMAC signature, not the limiter.
+ */
+export const kycWebhookLimiter = limiter({ windowMs: 60 * 1000, limit: 120 });
+
 export const globalLimiter = limiter({ windowMs: 15 * 60 * 1000, limit: 300 });

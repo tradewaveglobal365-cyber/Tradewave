@@ -36,12 +36,20 @@ export function VerifyIdentityForm({
     setFormError(null);
     try {
       // `consent` is recorded by the browser only; the API takes the document.
-      await apiFetch<KycStatusView>('/kyc/submit', {
+      const result = await apiFetch<KycStatusView>('/kyc/submit', {
         method: 'POST',
         body: { documentType: 'NIN', documentNumber: values.documentNumber },
       });
-      // Re-render the server component so every surface reading kycStatus —
-      // this page, the checklist, settings — updates from one fetch.
+
+      // The provider hosts the selfie step, so finishing means leaving this app.
+      // assign() rather than router.push(): this is an external origin.
+      if (result.redirectUrl) {
+        window.location.assign(result.redirectUrl);
+        return;
+      }
+
+      // No hosted step (the stub driver decides inline) — re-render the server
+      // component so every surface reading kycStatus updates from one fetch.
       router.refresh();
     } catch (err) {
       if (err instanceof ApiError && err.fields) {

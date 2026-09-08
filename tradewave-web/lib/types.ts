@@ -125,6 +125,8 @@ export interface KycStatusView {
   status: KycStatus;
   documentLast4: string | null;
   reason: string | null;
+  /** Where to send the user to finish. Only present while PENDING. */
+  redirectUrl: string | null;
   submittedAt: string | null;
   decidedAt: string | null;
   canRetry: boolean;

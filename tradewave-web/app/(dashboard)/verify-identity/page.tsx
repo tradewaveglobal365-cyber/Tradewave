@@ -7,6 +7,7 @@ import { getKycStatus } from '@/lib/kyc';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { Button } from '@/components/ui/button';
 import { VerifyIdentityForm } from '@/components/kyc/verify-identity-form';
+import { VerificationPoller } from '@/components/kyc/verification-poller';
 
 export const metadata: Metadata = { title: 'Verify your identity · Tradewave' };
 
@@ -48,10 +49,22 @@ export default async function VerifyIdentityPage() {
             title="We're reviewing your details"
             body={
               kyc?.documentLast4
-                ? `Submitted with the NIN ending ${kyc.documentLast4}. We'll email you as soon as it completes — you don't need to stay on this page.`
-                : "We'll email you as soon as this completes."
+                ? `Submitted with the NIN ending ${kyc.documentLast4}. This page updates itself — you don't have to wait here.`
+                : 'This page updates itself as soon as the check completes.'
             }
-          />
+          >
+            <VerificationPoller />
+            {kyc?.redirectUrl ? (
+              <>
+                <p className="mb-3 text-[0.8125rem] text-muted-foreground">
+                  Didn&rsquo;t finish? You can pick up where you left off.
+                </p>
+                <Button asChild className="h-11 md:h-10">
+                  <a href={kyc.redirectUrl}>Continue verification</a>
+                </Button>
+              </>
+            ) : null}
+          </Panel>
         ) : status === 'REJECTED' || status === 'EXPIRED' ? (
           <Panel
             tone="warn"

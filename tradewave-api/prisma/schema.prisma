@@ -170,8 +170,22 @@ model KycVerification {
   status          KycStatus
   rejectionReason String?
 
+  /// Where to send the user to finish. Kept so an abandoned session can be
+  /// resumed rather than paying for a brand new one.
+  redirectUrl String?
+
+  /// Audit trail. The provider holds the images; we keep only the scores that
+  /// justify the decision.
+  livenessScore  Float?
+  faceMatchScore Float?
+
   submittedAt DateTime  @default(now())
+  expiresAt   DateTime?
   decidedAt   DateTime?
+
+  /// Throttles reconciliation. Polling a paid API is not free.
+  lastPolledAt DateTime?
+  pollCount    Int       @default(0)
 
   @@index([userId, status])
   @@index([documentHash])

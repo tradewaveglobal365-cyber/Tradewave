@@ -30,7 +30,11 @@ const envSchema = z.object({
 
   // Empty string selects the stub identity driver (see services/kyc). Set once a
   // provider contract exists; until then submissions queue as PENDING in prod.
-  KYC_PROVIDER_API_KEY: z.string().default(''),
+  // All three together select the Didit driver; any missing and the stub stays.
+  // See services/kyc/index.ts, mirroring how RESEND_API_KEY selects its driver.
+  DIDIT_API_KEY: z.string().default(''),
+  DIDIT_WORKFLOW_ID: z.string().default(''),
+  DIDIT_WEBHOOK_SECRET: z.string().default(''),
   // Server-side pepper for hashing government ID numbers. An 11-digit NIN has too
   // little entropy to survive an unkeyed hash, so this secret is what stands
   // between a database dump and every user's ID number. See lib/crypto.
@@ -44,6 +48,17 @@ const envSchema = z.object({
 
 const parsed = envSchema
   .superRefine((cfg, ctx) => {
+    // Half-configured is worse than unconfigured: sessions would start and no
+    // decision could ever be verified, stranding users on "under review".
+    const didit = [cfg.DIDIT_API_KEY, cfg.DIDIT_WORKFLOW_ID, cfg.DIDIT_WEBHOOK_SECRET];
+    if (didit.some(Boolean) && !didit.every(Boolean)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DIDIT_API_KEY'],
+        message:
+          'DIDIT_API_KEY, DIDIT_WORKFLOW_ID and DIDIT_WEBHOOK_SECRET must all be set together, or all left empty',
+      });
+    }
     if (cfg.NODE_ENV === 'production' && cfg.KYC_ID_PEPPER.length < 32) {
       ctx.addIssue({
         code: 'custom',

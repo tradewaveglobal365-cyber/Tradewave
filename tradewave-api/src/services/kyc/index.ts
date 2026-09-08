@@ -1,5 +1,6 @@
 import { env, isProduction } from '../../config/env';
 import { logger } from '../../lib/logger';
+import { DiditKycProvider } from './didit';
 import type {
   KycDecision,
   KycProvider,
@@ -28,13 +29,17 @@ class StubKycProvider implements KycProvider {
         { documentType },
         'KYC submitted with the stub driver — left PENDING, no provider configured',
       );
-      return { providerRef: null, widgetUrl: null, status: 'PENDING' };
+      return { providerRef: null, redirectUrl: null, status: 'PENDING' };
     }
-    return { providerRef: null, widgetUrl: null, status: 'VERIFIED' };
+    return { providerRef: null, redirectUrl: null, status: 'VERIFIED' };
   }
 
   /** No remote side, so nothing can legitimately call back. */
   parseWebhook(): KycDecision | null {
+    return null;
+  }
+
+  async getVerification(): Promise<KycDecision | null> {
     return null;
   }
 }
@@ -43,13 +48,18 @@ class StubKycProvider implements KycProvider {
  * Typed as the interface rather than the class, so tests can vi.spyOn this
  * singleton the way auth.test.ts does with emailService.
  *
- * Phase 2 makes this a ternary on env.KYC_PROVIDER_API_KEY, exactly as
- * services/email/index.ts does with RESEND_API_KEY. Only this line changes — the
- * routes, service, schema and UI are all written against the interface.
+ * env.ts guarantees the three Didit vars are all set or all empty, so this one
+ * check is enough to decide.
  */
-export const kycProvider: KycProvider = new StubKycProvider();
+export const kycProvider: KycProvider = env.DIDIT_API_KEY
+  ? new DiditKycProvider(
+      env.DIDIT_API_KEY,
+      env.DIDIT_WORKFLOW_ID,
+      env.DIDIT_WEBHOOK_SECRET,
+    )
+  : new StubKycProvider();
 
-if (isProduction && !env.KYC_PROVIDER_API_KEY) {
+if (isProduction && !env.DIDIT_API_KEY) {
   logger.warn(
     'No KYC provider configured — identity submissions will queue as PENDING and nobody can approve them yet.',
   );

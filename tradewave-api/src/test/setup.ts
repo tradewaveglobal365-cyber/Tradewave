@@ -14,3 +14,6 @@ process.env.EMAIL_FROM = 'Tradewave <noreply@test.invalid>';
 process.env.COOKIE_DOMAIN = '';
 process.env.KYC_PROVIDER_API_KEY = '';
 process.env.KYC_ID_PEPPER = 'test-pepper-that-is-long-enough-32-chars';
+process.env.DIDIT_API_KEY = '';
+process.env.DIDIT_WORKFLOW_ID = '';
+process.env.DIDIT_WEBHOOK_SECRET = '';
