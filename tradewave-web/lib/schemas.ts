@@ -75,12 +75,7 @@ export type ResetPasswordValues = z.input<typeof resetPasswordSchema>;
  * ─────────────────────────────────────────────────────────────────────────────
  */
 export const submitKycSchema = z.object({
-  documentNumber: z
-    .string()
-    .trim()
-    .regex(/^\d{11}$/, 'A NIN is exactly 11 digits'),
-  // boolean().refine rather than literal(true): literal makes the INPUT type
-  // `true`, so the unchecked default state becomes untypeable.
+  // No document fields: the provider collects and reads the document itself.
   consent: z
     .boolean()
     .refine((v) => v, 'You need to agree before we can verify your identity'),

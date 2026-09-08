@@ -24,7 +24,16 @@ export type KycStatus =
   | 'REJECTED'
   | 'EXPIRED';
 
-export type KycDocumentType = 'NIN' | 'PASSPORT' | 'EMIRATES_ID';
+/** Reported by the provider from the document it read — never chosen by the user. */
+export type KycDocumentType =
+  | 'NIN'
+  | 'NATIONAL_ID'
+  | 'PASSPORT'
+  | 'DRIVERS_LICENSE'
+  | 'VOTERS_CARD'
+  | 'RESIDENCE_PERMIT'
+  | 'EMIRATES_ID'
+  | 'OTHER';
 export type Role = 'USER' | 'ADMIN';
 
 export interface PublicUser {

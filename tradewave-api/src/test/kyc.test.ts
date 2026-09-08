@@ -10,7 +10,6 @@ import { migrateTestDatabase, resetDatabase } from './helpers';
 const app = createApp();
 const ORIGIN = 'http://localhost:3000';
 const PASSWORD = 'correct horse battery staple';
-const NIN = '12345678901';
 
 const verifyUrls: string[] = [];
 
@@ -68,19 +67,19 @@ async function createProperty() {
   });
 }
 
-describe('submitting identity verification', () => {
+describe('starting identity verification', () => {
   it('records an attempt and moves the user off NOT_STARTED', async () => {
     const { agent, userId } = await createUser('kyc@example.com');
 
     const res = await agent
       .post('/api/v1/kyc/submit')
       .set('Origin', ORIGIN)
-      .send({ documentType: 'NIN', documentNumber: NIN });
+      .send({ consent: true });
 
     expect(res.status).toBe(201);
-    // The stub driver approves outside production, so the flow is demoable.
+    // The stub driver has no hosted step and decides inline outside production,
+    // so the flow is demoable without a provider.
     expect(res.body.status).toBe('VERIFIED');
-    expect(res.body.documentLast4).toBe('8901');
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     expect(user.kycStatus).toBe('VERIFIED');
@@ -89,59 +88,33 @@ describe('submitting identity verification', () => {
 
   it('never persists the raw document number', async () => {
     const { agent, userId } = await createUser('raw@example.com');
-    await agent
-      .post('/api/v1/kyc/submit')
-      .set('Origin', ORIGIN)
-      .send({ documentType: 'NIN', documentNumber: NIN });
+    await agent.post('/api/v1/kyc/submit').set('Origin', ORIGIN).send({ consent: true });
 
     const row = await prisma.kycVerification.findFirstOrThrow({ where: { userId } });
-    expect(JSON.stringify(row)).not.toContain(NIN);
-    // Only the display tail survives, and the hash is keyed rather than a bare digest.
-    expect(row.documentLast4).toBe('8901');
     expect(row.documentHash).toHaveLength(64);
-    expect(row.documentHash).not.toBe(NIN);
+    expect(row.documentLast4).toHaveLength(4);
+    // Whatever the provider read, only its keyed digest and last four survive.
+    expect(row.documentHash).not.toContain(row.documentLast4);
   });
 
-  it('rejects a NIN that is not exactly 11 digits, with a field error', async () => {
-    const { agent } = await createUser('short@example.com');
+  it('requires consent, with a field error the form can map back', async () => {
+    const { agent } = await createUser('noconsent@example.com');
 
-    for (const bad of ['1234567890', '123456789012', 'abcdefghijk']) {
-      const res = await agent
-        .post('/api/v1/kyc/submit')
-        .set('Origin', ORIGIN)
-        .send({ documentType: 'NIN', documentNumber: bad });
-      expect(res.status).toBe(422);
-      expect(res.body.error.fields).toHaveProperty('documentNumber');
-    }
-  });
-
-  it('refuses a document already verified on another account', async () => {
-    const first = await createUser('owner@example.com');
-    await first.agent
+    const res = await agent
       .post('/api/v1/kyc/submit')
       .set('Origin', ORIGIN)
-      .send({ documentType: 'NIN', documentNumber: NIN });
+      .send({ consent: false });
 
-    const second = await createUser('thief@example.com');
-    const res = await second.agent
-      .post('/api/v1/kyc/submit')
-      .set('Origin', ORIGIN)
-      .send({ documentType: 'NIN', documentNumber: NIN });
-
-    expect(res.status).toBe(409);
-    expect(res.body.error.code).toBe('DOCUMENT_ALREADY_VERIFIED');
-    // Must not leak whose account holds it.
-    expect(JSON.stringify(res.body)).not.toContain('owner@example.com');
+    expect(res.status).toBe(422);
+    expect(res.body.error.fields).toHaveProperty('consent');
   });
 
-  it('does not spend a second check once already verified', async () => {
+  it('does not start a second session once already verified', async () => {
     const { agent, userId } = await createUser('once@example.com');
     const spy = vi.spyOn(kycProvider, 'startVerification');
 
-    await agent.post('/api/v1/kyc/submit').set('Origin', ORIGIN)
-      .send({ documentType: 'NIN', documentNumber: NIN });
-    await agent.post('/api/v1/kyc/submit').set('Origin', ORIGIN)
-      .send({ documentType: 'NIN', documentNumber: NIN });
+    await agent.post('/api/v1/kyc/submit').set('Origin', ORIGIN).send({ consent: true });
+    await agent.post('/api/v1/kyc/submit').set('Origin', ORIGIN).send({ consent: true });
 
     expect(spy).toHaveBeenCalledTimes(1);
     expect(await prisma.kycVerification.count({ where: { userId } })).toBe(1);
@@ -149,20 +122,21 @@ describe('submitting identity verification', () => {
 
   it('caps attempts in the service, where the express limiter cannot reach', async () => {
     const { agent, userId } = await createUser('grind@example.com');
-    // Force the provider to reject so attempts accumulate instead of terminating.
+    // Force rejections so attempts accumulate instead of terminating on success.
     vi.spyOn(kycProvider, 'startVerification').mockResolvedValue({
       providerRef: null,
-      widgetUrl: null,
+      redirectUrl: null,
       status: 'REJECTED',
-      rejectionReason: 'No match',
+      rejectionReason: 'Document unreadable',
     });
 
     for (let i = 0; i < 3; i++) {
-      await agent.post('/api/v1/kyc/submit').set('Origin', ORIGIN)
-        .send({ documentType: 'NIN', documentNumber: `1234567890${i}` });
+      await agent.post('/api/v1/kyc/submit').set('Origin', ORIGIN).send({ consent: true });
     }
-    const res = await agent.post('/api/v1/kyc/submit').set('Origin', ORIGIN)
-      .send({ documentType: 'NIN', documentNumber: '99999999999' });
+    const res = await agent
+      .post('/api/v1/kyc/submit')
+      .set('Origin', ORIGIN)
+      .send({ consent: true });
 
     expect(res.status).toBe(429);
     expect(await prisma.kycVerification.count({ where: { userId } })).toBe(3);
@@ -191,7 +165,7 @@ describe('the investment gate', () => {
     await agent
       .post('/api/v1/kyc/submit')
       .set('Origin', ORIGIN)
-      .send({ documentType: 'NIN', documentNumber: NIN });
+      .send({ consent: true });
 
     // Same agent, same 15-minute access token. This is the whole reason the gate
     // reads the database instead of the JWT: had kycStatus lived in the token,

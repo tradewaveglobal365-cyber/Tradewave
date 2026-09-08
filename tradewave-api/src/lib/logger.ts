@@ -9,8 +9,9 @@ export const logger = pino({
       'req.body.password',
       'req.body.newPassword',
       'req.body.currentPassword',
-      // pino-http logs request bodies outside production; without this a NIN
-      // lands in stdout on the first identity submission.
+      // Defensive: the KYC request body carries only a consent flag today, but
+      // pino-http logs bodies outside production, so any future document field
+      // must never reach stdout.
       'req.body.documentNumber',
       'req.headers.authorization',
       'req.headers.cookie',

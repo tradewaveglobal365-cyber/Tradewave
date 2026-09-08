@@ -14,9 +14,11 @@ import type { DocumentType, KycStatus } from '@prisma/client';
 export interface StartVerificationInput {
   /** Our KycVerification.id. Correlates the provider's callbacks back to a row. */
   reference: string;
-  documentType: DocumentType;
-  /** Raw document number. Sent to the provider; never persisted by us. */
-  documentNumber: string;
+  /**
+   * Sent so the provider can flag a mismatch against the document it reads. We do
+   * NOT send a document number — the user no longer supplies one; the provider
+   * extracts it from the document it verifies.
+   */
   firstName: string;
   lastName: string;
   email: string;
@@ -41,6 +43,9 @@ export interface StartVerificationResult {
   status: ProviderStatus;
   rejectionReason?: string | undefined;
   expiresAt?: Date | undefined;
+  /** Set only by a driver that decides inline, with no hosted step. */
+  documentNumber?: string | undefined;
+  documentType?: DocumentType | undefined;
 }
 
 export interface KycDecision {
@@ -51,6 +56,13 @@ export interface KycDecision {
   rejectionReason?: string | undefined;
   livenessScore?: number | undefined;
   faceMatchScore?: number | undefined;
+  /**
+   * Read off the document the provider verified. This is the dedupe key — a
+   * verified value rather than one the user typed. Absent when the provider
+   * declined before extracting anything.
+   */
+  documentNumber?: string | undefined;
+  documentType?: DocumentType | undefined;
 }
 
 export interface KycProvider {

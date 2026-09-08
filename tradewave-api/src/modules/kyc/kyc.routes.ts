@@ -29,7 +29,7 @@ kycRouter.post(
   validateBody(submitKycSchema),
   async (req: Request, res: Response) => {
     if (!req.auth) throw unauthorized();
-    res.status(201).json(await service.submit(req.auth.userId, req.body));
+    res.status(201).json(await service.submit(req.auth.userId));
   },
 );
 

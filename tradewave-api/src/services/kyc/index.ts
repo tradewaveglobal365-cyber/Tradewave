@@ -22,17 +22,26 @@ class StubKycProvider implements KycProvider {
   readonly name = 'stub';
 
   async startVerification({
-    documentType,
+    reference,
   }: StartVerificationInput): Promise<StartVerificationResult> {
     if (isProduction) {
       logger.warn(
-        { documentType },
+        { reference },
         'KYC submitted with the stub driver — left PENDING, no provider configured',
       );
       return { providerRef: null, redirectUrl: null, status: 'PENDING' };
     }
-    return { providerRef: null, redirectUrl: null, status: 'VERIFIED' };
+    // A synthetic document number, deterministic per attempt, so the duplicate
+    // check in kyc.service has something real to hash in development.
+    return {
+      providerRef: null,
+      redirectUrl: null,
+      status: 'VERIFIED',
+      documentNumber: `STUB-${reference.replace(/-/g, '').slice(0, 12).toUpperCase()}`,
+      documentType: 'NATIONAL_ID',
+    };
   }
+
 
   /** No remote side, so nothing can legitimately call back. */
   parseWebhook(): KycDecision | null {

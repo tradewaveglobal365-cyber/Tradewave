@@ -3,10 +3,9 @@ import { prisma } from '../../lib/prisma';
 import { env } from '../../config/env';
 import { hashIdentifier } from '../../lib/crypto';
 import { logger } from '../../lib/logger';
-import { documentAlreadyVerified, tooManyRequests } from '../../lib/errors';
+import { tooManyRequests } from '../../lib/errors';
 import { kycProvider } from '../../services/kyc';
 import type { KycDecision } from '../../services/kyc/types';
-import type { SubmitKycInput } from './schemas';
 
 /**
  * Attempt caps live here rather than in the express limiter because that limiter
@@ -75,17 +74,49 @@ export async function applyDecision(decision: KycDecision): Promise<void> {
   }
   if (decision.status === 'PENDING') return;
 
+  // The dedupe key is the number the PROVIDER read off the verified document, so
+  // it can only be known now — the user never typed one. Hashing here rather than
+  // at submit time also means the value has passed the document authenticity
+  // checks before it is trusted as an identity.
+  const documentHash = decision.documentNumber
+    ? hashIdentifier(decision.documentNumber)
+    : null;
+
+  let status = decision.status;
+  let reason = decision.rejectionReason ?? null;
+
+  if (status === 'VERIFIED' && documentHash) {
+    const claimedByOther = await prisma.kycVerification.findFirst({
+      where: { documentHash, status: 'VERIFIED', userId: { not: row.userId } },
+      select: { id: true },
+    });
+    if (claimedByOther) {
+      // Deliberately does not say whose account — that would leak membership.
+      status = 'REJECTED';
+      reason = 'This document is already linked to another verified account.';
+      logger.warn(
+        { verificationId: row.id },
+        'KYC rejected: document already verified on another account',
+      );
+    }
+  }
+
   await prisma.$transaction(async (tx) => {
     // Conditional update rather than read-then-write: only ever transitions OUT
     // of PENDING, so a replayed webhook updates zero rows and does nothing.
     const { count } = await tx.kycVerification.updateMany({
       where: { id: row.id, status: 'PENDING' },
       data: {
-        status: decision.status,
-        rejectionReason: decision.rejectionReason ?? null,
+        status,
+        rejectionReason: reason,
         livenessScore: decision.livenessScore ?? null,
         faceMatchScore: decision.faceMatchScore ?? null,
         providerRef: decision.providerRef,
+        documentHash,
+        documentType: decision.documentType ?? null,
+        documentLast4: decision.documentNumber
+          ? decision.documentNumber.slice(-4)
+          : null,
         decidedAt: new Date(),
       },
     });
@@ -95,19 +126,16 @@ export async function applyDecision(decision: KycDecision): Promise<void> {
       where: {
         id: row.userId,
         // A late Declined for an old attempt must never un-verify someone.
-        ...(decision.status === 'VERIFIED' ? {} : { kycStatus: { not: 'VERIFIED' } }),
+        ...(status === 'VERIFIED' ? {} : { kycStatus: { not: 'VERIFIED' } }),
       },
       data: {
-        kycStatus: decision.status,
-        ...(decision.status === 'VERIFIED' ? { kycVerifiedAt: new Date() } : {}),
+        kycStatus: status,
+        ...(status === 'VERIFIED' ? { kycVerifiedAt: new Date() } : {}),
       },
     });
   });
 
-  logger.info(
-    { verificationId: row.id, status: decision.status },
-    'KYC decision applied',
-  );
+  logger.info({ verificationId: row.id, status }, 'KYC decision applied');
 }
 
 /**
@@ -155,28 +183,20 @@ export async function getStatus(userId: string): Promise<KycStatusView> {
   return view(user.kycStatus, fresh, attempts);
 }
 
-export async function submit(
-  userId: string,
-  input: SubmitKycInput,
-): Promise<KycStatusView> {
+export async function submit(userId: string): Promise<KycStatusView> {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
     select: { kycStatus: true, firstName: true, lastName: true, email: true },
   });
 
-  // Already through, or already awaiting a decision: never spend a second check.
+  // Already through, or already awaiting a decision: never start a second session.
   if (user.kycStatus === 'VERIFIED' || user.kycStatus === 'PENDING') {
     return getStatus(userId);
   }
 
-  const documentHash = hashIdentifier(input.documentNumber);
-
-  // Cheap local checks before anything that costs money.
-  const [claimedByOther, dayCount, lifetimeCount] = await Promise.all([
-    prisma.kycVerification.findFirst({
-      where: { documentHash, status: 'VERIFIED', userId: { not: userId } },
-      select: { id: true },
-    }),
+  // No duplicate check here any more: nothing identifies the document until the
+  // provider reads it. The check now lives in applyDecision.
+  const [dayCount, lifetimeCount] = await Promise.all([
     prisma.kycVerification.count({
       where: {
         userId,
@@ -187,10 +207,6 @@ export async function submit(
     prisma.kycVerification.count({ where: { userId, status: { not: 'EXPIRED' } } }),
   ]);
 
-  if (claimedByOther) {
-    // Deliberately does not say whose account — that would leak membership.
-    throw documentAlreadyVerified();
-  }
   if (dayCount >= MAX_ATTEMPTS_PER_DAY || lifetimeCount >= MAX_ATTEMPTS_LIFETIME) {
     throw tooManyRequests(
       'You have reached the identity verification attempt limit. Contact support.',
@@ -203,14 +219,7 @@ export async function submit(
   // follows against LedgerEntry: a status with no attempt behind it is unauditable.
   const attempt = await prisma.$transaction(async (tx) => {
     const created = await tx.kycVerification.create({
-      data: {
-        userId,
-        provider: kycProvider.name,
-        documentType: input.documentType,
-        documentLast4: input.documentNumber.slice(-4),
-        documentHash,
-        status: 'PENDING',
-      },
+      data: { userId, provider: kycProvider.name, status: 'PENDING' },
     });
     await tx.user.update({ where: { id: userId }, data: { kycStatus: 'PENDING' } });
     return created;
@@ -220,8 +229,6 @@ export async function submit(
   try {
     result = await kycProvider.startVerification({
       reference: attempt.id,
-      documentType: input.documentType,
-      documentNumber: input.documentNumber,
       firstName: user.firstName,
       lastName: user.lastName,
       email: user.email,
@@ -250,13 +257,16 @@ export async function submit(
     },
   });
 
-  // A driver with no hosted step (the stub) decides immediately.
+  // A driver with no hosted step (the stub) decides immediately, and supplies the
+  // document itself so the duplicate check still runs.
   if (result.status !== 'PENDING') {
     await applyDecision({
       reference: attempt.id,
       providerRef: result.providerRef ?? attempt.id,
       status: result.status,
       rejectionReason: result.rejectionReason,
+      documentNumber: result.documentNumber,
+      documentType: result.documentType,
     });
   }
 

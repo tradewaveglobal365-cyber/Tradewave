@@ -114,6 +114,39 @@ describe('Didit status mapping', () => {
     expect(provider.parseWebhook(body, headers)?.status ?? null).toBe(expected);
   });
 
+  it('extracts the document number and maps the document type', () => {
+    const payload = {
+      session_id: 's',
+      vendor_data: 'r',
+      status: 'Approved',
+      id_verifications: [
+        {
+          status: 'Approved',
+          document_type: "Driver's License",
+          document_number: 'AAA111222',
+          personal_number: '12345678901',
+        },
+      ],
+    };
+    const { body, headers } = webhook(payload);
+    const d = provider.parseWebhook(body, headers);
+    // personal_number wins: on a national ID that is the NIN, which is the
+    // number worth deduping on rather than the card serial.
+    expect(d?.documentNumber).toBe('12345678901');
+    expect(d?.documentType).toBe('DRIVERS_LICENSE');
+  });
+
+  it('falls back to OTHER for a document type it does not know', () => {
+    const payload = {
+      session_id: 's',
+      vendor_data: 'r',
+      status: 'Approved',
+      id_verifications: [{ status: 'Approved', document_type: 'Fishing Permit' }],
+    };
+    const { body, headers } = webhook(payload);
+    expect(provider.parseWebhook(body, headers)?.documentType).toBe('OTHER');
+  });
+
   it('carries a reason through on decline', () => {
     const payload = {
       session_id: 's',
@@ -138,7 +171,12 @@ describe('applying decisions', () => {
         passwordHash: 'x',
         firstName: 'A',
         lastName: 'B',
-        referralCode: Math.random().toString(36).slice(2, 10).toUpperCase(),
+        // The app's own alphabet: base36 would emit 0/1/I/O/L, which referral
+        // codes exclude, and that has produced confusing cross-suite flakes.
+        referralCode: Array.from(
+          { length: 8 },
+          () => '23456789ABCDEFGHJKMNPQRSTUVWXYZ'[Math.floor(Math.random() * 31)],
+        ).join(''),
         status: 'ACTIVE',
         emailVerifiedAt: new Date(),
         kycStatus: 'PENDING',
@@ -148,10 +186,7 @@ describe('applying decisions', () => {
       data: {
         userId: user.id,
         provider: 'didit',
-        providerRef: 'sess-1',
-        documentType: 'NIN',
-        documentLast4: '8901',
-        documentHash: 'h',
+        providerRef: `sess-${Math.random().toString(36).slice(2, 10)}`,
         status: 'PENDING',
       },
     });
@@ -210,6 +245,38 @@ describe('applying decisions', () => {
     expect(
       (await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).kycStatus,
     ).toBe('VERIFIED');
+  });
+
+  it('rejects a second account claiming the same document, without un-verifying the first', async () => {
+    const first = await seedPendingAttempt();
+    await applyDecision({
+      reference: first.attempt.id,
+      providerRef: 'sess-a',
+      status: 'VERIFIED',
+      documentNumber: '12345678901',
+      documentType: 'NATIONAL_ID',
+    });
+
+    const second = await seedPendingAttempt();
+    await applyDecision({
+      reference: second.attempt.id,
+      providerRef: 'sess-b',
+      status: 'VERIFIED',
+      documentNumber: '12345678901',
+      documentType: 'NATIONAL_ID',
+    });
+
+    const firstUser = await prisma.user.findUniqueOrThrow({ where: { id: first.user.id } });
+    const secondUser = await prisma.user.findUniqueOrThrow({ where: { id: second.user.id } });
+    const secondRow = await prisma.kycVerification.findUniqueOrThrow({
+      where: { id: second.attempt.id },
+    });
+
+    expect(firstUser.kycStatus).toBe('VERIFIED');
+    expect(secondUser.kycStatus).toBe('REJECTED');
+    expect(secondRow.rejectionReason).toMatch(/already linked/i);
+    // Must not leak which account holds it.
+    expect(secondRow.rejectionReason).not.toContain(first.user.email);
   });
 
   it('ignores an unknown reference without throwing', async () => {

@@ -39,12 +39,17 @@ enum KycStatus {
   EXPIRED
 }
 
-/// NIN is the only type accepted today. The others exist so adding them later is a
-/// value on an existing enum rather than a reshape of the model.
+/// Reported by the provider from the document it verified — not chosen by the user.
+/// OTHER is the catch-all so an unrecognised type is recorded rather than dropped.
 enum DocumentType {
   NIN
+  NATIONAL_ID
   PASSPORT
+  DRIVERS_LICENSE
+  VOTERS_CARD
+  RESIDENCE_PERMIT
   EMIRATES_ID
+  OTHER
 }
 
 enum PropertyStatus {
@@ -160,12 +165,15 @@ model KycVerification {
   /// apply twice. Null under the stub driver, which has no remote counterpart.
   providerRef String? @unique
 
-  documentType  DocumentType
+  /// All three are null until the provider returns a decision: the user no longer
+  /// types a document number, so nothing is known at submit time. They are filled
+  /// from the document the provider actually verified.
+  documentType  DocumentType?
   /// Display only, e.g. "4821" rendered as ****4821.
-  documentLast4 String
-  /// sha256 of the raw number. The raw value is never stored — see
-  /// src/modules/kyc/kyc.service.ts. The index enforces one document, one account.
-  documentHash  String
+  documentLast4 String?
+  /// Keyed HMAC of the number the provider READ off the verified document — a
+  /// stronger dedupe key than a self-typed one. The raw value is never stored.
+  documentHash  String?
 
   status          KycStatus
   rejectionReason String?

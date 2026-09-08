@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import type { DocumentType } from '@prisma/client';
 import { tokensMatch } from '../../lib/crypto';
 import { logger } from '../../lib/logger';
 import type {
@@ -45,7 +46,32 @@ interface DiditSessionResponse {
 interface DiditFeature {
   status?: string;
   score?: number;
+  document_type?: string;
+  document_number?: string;
+  personal_number?: string;
   warnings?: { short_description?: string; long_description?: string }[];
+}
+
+/**
+ * Didit names document types in prose ("Driver's License"). Map onto our enum so
+ * an unrecognised name lands on OTHER rather than throwing away the attempt.
+ */
+const DOCUMENT_TYPE_MAP: Record<string, DocumentType> = {
+  passport: 'PASSPORT',
+  'identity card': 'NATIONAL_ID',
+  'id card': 'NATIONAL_ID',
+  'national id': 'NATIONAL_ID',
+  "driver's license": 'DRIVERS_LICENSE',
+  'drivers license': 'DRIVERS_LICENSE',
+  'driving licence': 'DRIVERS_LICENSE',
+  'voter card': 'VOTERS_CARD',
+  "voter's card": 'VOTERS_CARD',
+  'residence permit': 'RESIDENCE_PERMIT',
+};
+
+function mapDocumentType(raw: string | undefined): DocumentType | undefined {
+  if (!raw) return undefined;
+  return DOCUMENT_TYPE_MAP[raw.trim().toLowerCase()] ?? 'OTHER';
 }
 
 interface DiditDecisionResponse {
@@ -140,10 +166,11 @@ export class DiditKycProvider implements KycProvider {
   async startVerification(
     input: StartVerificationInput,
   ): Promise<StartVerificationResult> {
-    // expected_details pre-fills the lookup so the user only takes a selfie on
-    // Didit's page. For Nigeria the NIMC source returns a government photograph,
-    // and Didit runs passive liveness plus a face match against it inside the
-    // lookup — that is what binds the account to a person rather than a number.
+    // The workflow runs document capture, passive liveness and a face match against
+    // the document portrait — all free-tier. expected_details carries only the name
+    // we already hold, so the provider can flag a document that does not match the
+    // registered account. No document number is sent: the user does not supply one,
+    // and the provider extracts it from the document it verifies.
     const session = await this.request<DiditSessionResponse>('/v3/session/', {
       method: 'POST',
       body: JSON.stringify({
@@ -153,10 +180,8 @@ export class DiditKycProvider implements KycProvider {
         language: 'en',
         contact_details: { email: input.email, send_notification_emails: false },
         expected_details: {
-          identification_number: input.documentNumber,
           first_name: input.firstName,
           last_name: input.lastName,
-          id_country: 'NGA',
         },
       }),
     });
@@ -209,6 +234,7 @@ export class DiditKycProvider implements KycProvider {
 
   private toDecision(d: DiditDecisionResponse): KycDecision | null {
     if (!d.vendor_data || !d.session_id) return null;
+    const idv = d.id_verifications?.[0];
     const status = STATUS_MAP[d.status];
     if (!status) {
       logger.warn({ status: d.status }, 'Unrecognised Didit status — holding pending');
@@ -228,6 +254,10 @@ export class DiditKycProvider implements KycProvider {
           : undefined,
       livenessScore: bestScore(d.liveness_checks),
       faceMatchScore: bestScore(d.face_matches),
+      // personal_number first: on a national ID that is the NIN, which is the
+      // number worth deduping on. document_number is the booklet/card serial.
+      documentNumber: idv?.personal_number ?? idv?.document_number,
+      documentType: mapDocumentType(idv?.document_type),
     };
   }
 }

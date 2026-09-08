@@ -23,7 +23,7 @@ export default async function VerifyIdentityPage() {
     <div>
       <PageHeader
         title="Verify your identity"
-        description="Required before you can invest. It takes about a minute."
+        description="Required before you can invest. Photograph an ID, take a selfie \u2014 about a minute."
       />
 
       <div className="max-w-xl">
@@ -34,7 +34,7 @@ export default async function VerifyIdentityPage() {
             title="Your identity is verified"
             body={
               kyc?.documentLast4
-                ? `Confirmed against the NIN ending ${kyc.documentLast4}.`
+                ? `Confirmed against the document ending ${kyc.documentLast4}.`
                 : 'You can now invest in any open property.'
             }
           >
@@ -49,7 +49,7 @@ export default async function VerifyIdentityPage() {
             title="We're reviewing your details"
             body={
               kyc?.documentLast4
-                ? `Submitted with the NIN ending ${kyc.documentLast4}. This page updates itself — you don't have to wait here.`
+                ? `Document ending ${kyc.documentLast4}. This page updates itself — you don't have to wait here.`
                 : 'This page updates itself as soon as the check completes.'
             }
           >
@@ -78,7 +78,7 @@ export default async function VerifyIdentityPage() {
               status === 'EXPIRED'
                 ? 'Nothing went wrong on your side — the check timed out before it finished. Please try again.'
                 : (kyc?.reason ??
-                  'Check that the number matches your NIN slip exactly, then try again.')
+                  'Make sure the whole document is in frame, in focus and not expired, then try again.')
             }
           >
             {kyc?.canRetry ? (
@@ -103,8 +103,10 @@ export default async function VerifyIdentityPage() {
             <p className="mt-5 flex items-start gap-2 border-t border-hairline pt-4 text-[0.75rem] leading-relaxed text-muted-foreground">
               <ShieldCheck className="mt-px size-3.5 shrink-0" />
               <span>
-                We never store your NIN. Only a one-way fingerprint and the last
-                four digits are kept, so a breach of our database cannot reveal it.
+                Your document photo and selfie stay with our verification partner
+                and never reach Tradewave. We keep the result, and a one-way
+                fingerprint of the document number so one ID cannot open two
+                accounts.
               </span>
             </p>
           </div>
