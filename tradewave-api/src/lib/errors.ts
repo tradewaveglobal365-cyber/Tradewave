@@ -93,3 +93,13 @@ export const belowMinimumInvestment = (minimum: string) =>
   new AppError(422, 'BELOW_MINIMUM', `The minimum investment for this property is ${minimum}.`, {
     amountCents: `Minimum is ${minimum}`,
   });
+
+/**
+ * Deposits are closed because no USD/NGN rate is set, or no payment provider is
+ * configured. Deliberately 503 rather than 500: nothing is broken, an operator
+ * has simply not finished setting something up, and it will start working
+ * without a code change.
+ */
+export const depositsUnavailable = (
+  message = 'Funding is temporarily unavailable. Please try again shortly.',
+) => new AppError(503, 'DEPOSITS_UNAVAILABLE', message);

@@ -15,6 +15,7 @@ import { investmentRouter, investmentActionRouter } from './modules/investment/i
 import { walletRouter } from './modules/wallet/wallet.routes';
 import { referralRouter } from './modules/referral/referral.routes';
 import { kycRouter } from './modules/kyc/kyc.routes';
+import { fxRouter } from './modules/fx/fx.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -83,6 +84,7 @@ export function createApp(): Express {
   app.use('/api/v1/auth', authRouter);
   app.use('/api/v1/referrals', referralRouter);
   app.use('/api/v1/kyc', kycRouter);
+  app.use('/api/v1/fx', fxRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

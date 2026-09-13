@@ -40,6 +40,19 @@ const envSchema = z.object({
   // between a database dump and every user's ID number. See lib/crypto.
   KYC_ID_PEPPER: z.string().default(''),
 
+  // Klasha — naira collection accounts. All five together select the real
+  // driver; any missing and the stub stays. See services/payments/index.ts.
+  //
+  // The bearer token is minted from an ACCOUNT email and password rather than a
+  // machine credential, which is Klasha's design and not a good one: these are
+  // dashboard login credentials sitting in deployment config. Ask them for a
+  // scoped API credential before this goes anywhere near real money.
+  KLASHA_BASE_URL: z.string().default('https://dev.kcookery.com'),
+  KLASHA_PUBLIC_KEY: z.string().default(''),
+  KLASHA_ENCRYPTION_KEY: z.string().default(''),
+  KLASHA_ACCOUNT_EMAIL: z.string().default(''),
+  KLASHA_ACCOUNT_PASSWORD: z.string().default(''),
+
   WEB_ORIGIN: z.string().url(),
   // Empty in development; ".tradewave.com" in production so the cookie is
   // shared between tradewave.com and api.tradewave.com.
@@ -59,6 +72,31 @@ const parsed = envSchema
           'DIDIT_API_KEY, DIDIT_WORKFLOW_ID and DIDIT_WEBHOOK_SECRET must all be set together, or all left empty',
       });
     }
+    // Same all-or-nothing rule as Didit, for a sharper reason: a half-configured
+    // payment provider means we hand a user an account number and then cannot
+    // confirm what lands in it. Money arrives and nothing credits it.
+    const klasha = [
+      cfg.KLASHA_PUBLIC_KEY,
+      cfg.KLASHA_ENCRYPTION_KEY,
+      cfg.KLASHA_ACCOUNT_EMAIL,
+      cfg.KLASHA_ACCOUNT_PASSWORD,
+    ];
+    if (klasha.some(Boolean) && !klasha.every(Boolean)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['KLASHA_PUBLIC_KEY'],
+        message:
+          'KLASHA_PUBLIC_KEY, KLASHA_ENCRYPTION_KEY, KLASHA_ACCOUNT_EMAIL and KLASHA_ACCOUNT_PASSWORD must all be set together, or all left empty',
+      });
+    }
+    if (cfg.KLASHA_ENCRYPTION_KEY && Buffer.byteLength(cfg.KLASHA_ENCRYPTION_KEY) !== 24) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['KLASHA_ENCRYPTION_KEY'],
+        message: `KLASHA_ENCRYPTION_KEY must be exactly 24 bytes for 3DES, got ${Buffer.byteLength(cfg.KLASHA_ENCRYPTION_KEY)}`,
+      });
+    }
+
     if (cfg.NODE_ENV === 'production' && cfg.KYC_ID_PEPPER.length < 32) {
       ctx.addIssue({
         code: 'custom',

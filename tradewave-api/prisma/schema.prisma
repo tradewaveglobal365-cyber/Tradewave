@@ -113,6 +113,7 @@ model User {
   wallet           Wallet?
   investments      Investment[]
   deposits         Deposit[]
+  depositAccount   DepositAccount?
   kycVerifications KycVerification[]
 
   createdAt DateTime @default(now())
@@ -213,7 +214,7 @@ model LoginAttempt {
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 2 — properties, wallet, fractional investment
 //
-// All money is an integer number of FILS held as BigInt. Never a float, never a
+// All money is an integer number of US CENTS held as BigInt. Never a float, never a
 // JS number in this layer. See src/lib/money.ts for the reasoning.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -295,7 +296,7 @@ model LedgerEntry {
   walletId String @db.Uuid
   wallet   Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
-  type             LedgerEntryType
+  type              LedgerEntryType
   amountCents       BigInt // signed: credit positive, debit negative
   balanceAfterCents BigInt // snapshot, so a row can be audited in isolation
 
@@ -312,6 +313,32 @@ model LedgerEntry {
   @@index([walletId, createdAt])
 }
 
+// The naira account a user transfers into. One per user, permanent once created:
+// Klasha issues a dedicated account keyed on the customer's email, so the number
+// a user memorises keeps working for every future deposit.
+model DepositAccount {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider    String  @default("klasha")
+  providerRef String?
+
+  // Shown to the user verbatim. Stored rather than re-fetched on every page
+  // load: it never changes, and a wallet screen that cannot render because the
+  // provider is slow is worse than one showing details we already hold.
+  accountNumber String
+  accountName   String
+  bankName      String
+  bankCode      String?
+  currency      String  @default("NGN")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountNumber])
+}
+
 model Deposit {
   id     String @id @default(uuid()) @db.Uuid
   userId String @db.Uuid
@@ -320,8 +347,21 @@ model Deposit {
   amountCents BigInt
   status      DepositStatus @default(PENDING)
   provider    String        @default("klasha")
-  providerRef String        @unique
-  paidAt      DateTime?
+
+  // Klasha's tnxRef. Unique, so a replayed webhook cannot double-credit: the
+  // second insert fails at the database rather than relying on a code path
+  // remembering to check.
+  providerRef String @unique
+
+  // What actually arrived, and the rate applied to it. Pinned at receipt so a
+  // later rate change can never restate a deposit that already happened —
+  // without these two columns the credited figure is unexplainable after the
+  // admin next moves the rate.
+  sourceAmountMinor BigInt?
+  sourceCurrency    String  @default("NGN")
+  rateMinorPerUnit  BigInt?
+
+  paidAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

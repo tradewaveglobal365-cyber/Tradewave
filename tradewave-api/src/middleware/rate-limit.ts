@@ -75,3 +75,17 @@ export const kycSubmitLimiter = limiter({
 export const kycWebhookLimiter = limiter({ windowMs: 60 * 1000, limit: 120 });
 
 export const globalLimiter = limiter({ windowMs: 15 * 60 * 1000, limit: 300 });
+
+/**
+ * Provisioning a deposit account is a call to the payment provider, so this is
+ * tighter than an ordinary read. The account is cached after the first success,
+ * making repeated misses the only thing this needs to absorb.
+ */
+export const depositAccountLimiter = limiter({ windowMs: 60 * 1000, limit: 20 });
+
+/**
+ * Klasha's webhook carries no signature, so this endpoint is genuinely open —
+ * anyone can POST to it. The limit is what stops that being free: each request
+ * costs us an authenticated lookup against the provider.
+ */
+export const depositWebhookLimiter = limiter({ windowMs: 60 * 1000, limit: 120 });
