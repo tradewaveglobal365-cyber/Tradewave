@@ -3,7 +3,7 @@ import request from 'supertest';
 import { createApp } from '../app';
 import { prisma } from '../lib/prisma';
 import { emailService } from '../services/email';
-import { dirhamToFils } from '../lib/money';
+import { dollarsToCents } from '../lib/money';
 import { migrateTestDatabase, resetDatabase } from './helpers';
 
 const app = createApp();
@@ -56,8 +56,8 @@ async function createFundedUser(email: string, balance: string) {
 
   const wallet = await prisma.wallet.upsert({
     where: { userId },
-    update: { balanceFils: dirhamToFils(balance) },
-    create: { userId, balanceFils: dirhamToFils(balance) },
+    update: { balanceCents: dollarsToCents(balance) },
+    create: { userId, balanceCents: dollarsToCents(balance) },
   });
 
   // Write the matching ledger entry. Setting a balance without one would leave
@@ -67,8 +67,8 @@ async function createFundedUser(email: string, balance: string) {
     data: {
       walletId: wallet.id,
       type: 'DEPOSIT',
-      amountFils: dirhamToFils(balance),
-      balanceAfterFils: dirhamToFils(balance),
+      amountCents: dollarsToCents(balance),
+      balanceAfterCents: dollarsToCents(balance),
       reference: `open-${userId}`,
       description: 'Opening balance',
     },
@@ -88,8 +88,8 @@ async function createProperty(overrides: Partial<{ total: string; min: string; b
       area: 'Downtown Dubai',
       city: 'Dubai',
       images: [],
-      totalValueFils: dirhamToFils(overrides.total ?? '100000'),
-      minInvestmentFils: dirhamToFils(overrides.min ?? '1000'),
+      totalValueCents: dollarsToCents(overrides.total ?? '100000'),
+      minInvestmentCents: dollarsToCents(overrides.min ?? '1000'),
       annualReturnBps: overrides.bps ?? 800,
       termMonths: 24,
       status: 'OPEN',
@@ -107,8 +107,8 @@ async function assertLedgerIntegrity(userId: string) {
     where: { userId },
     include: { entries: true },
   });
-  const sum = wallet.entries.reduce((acc, e) => acc + e.amountFils, 0n);
-  expect(sum).toBe(wallet.balanceFils);
+  const sum = wallet.entries.reduce((acc, e) => acc + e.amountCents, 0n);
+  expect(sum).toBe(wallet.balanceCents);
 }
 
 describe('creating an investment', () => {
@@ -119,16 +119,16 @@ describe('creating an investment', () => {
     const res = await agent
       .post('/api/v1/investments')
       .set('Origin', ORIGIN)
-      .send({ propertyId: property.id, amountFils: dirhamToFils('10000').toString() });
+      .send({ propertyId: property.id, amountCents: dollarsToCents('10000').toString() });
 
     expect(res.status).toBe(201);
-    expect(res.body.balanceFils).toBe(dirhamToFils('40000').toString());
+    expect(res.body.balanceCents).toBe(dollarsToCents('40000').toString());
 
     const investment = await prisma.investment.findFirstOrThrow({ where: { userId } });
-    expect(investment.principalFils).toBe(dirhamToFils('10000'));
+    expect(investment.principalCents).toBe(dollarsToCents('10000'));
 
     const after = await prisma.property.findUniqueOrThrow({ where: { id: property.id } });
-    expect(after.fundedFils).toBe(dirhamToFils('10000'));
+    expect(after.fundedCents).toBe(dollarsToCents('10000'));
 
     await assertLedgerIntegrity(userId);
   });
@@ -140,7 +140,7 @@ describe('creating an investment', () => {
     await agent
       .post('/api/v1/investments')
       .set('Origin', ORIGIN)
-      .send({ propertyId: property.id, amountFils: dirhamToFils('5000').toString() });
+      .send({ propertyId: property.id, amountCents: dollarsToCents('5000').toString() });
 
     await prisma.property.update({
       where: { id: property.id },
@@ -159,7 +159,7 @@ describe('creating an investment', () => {
     const res = await agent
       .post('/api/v1/investments')
       .set('Origin', ORIGIN)
-      .send({ propertyId: property.id, amountFils: dirhamToFils('1000').toString() });
+      .send({ propertyId: property.id, amountCents: dollarsToCents('1000').toString() });
 
     expect(res.status).toBe(422);
     expect(res.body.error.code).toBe('BELOW_MINIMUM');
@@ -172,7 +172,7 @@ describe('creating an investment', () => {
     const res = await agent
       .post('/api/v1/investments')
       .set('Origin', ORIGIN)
-      .send({ propertyId: property.id, amountFils: dirhamToFils('5000').toString() });
+      .send({ propertyId: property.id, amountCents: dollarsToCents('5000').toString() });
 
     expect(res.status).toBe(422);
     expect(res.body.error.code).toBe('INSUFFICIENT_FUNDS');
@@ -187,7 +187,7 @@ describe('creating an investment', () => {
     const res = await agent
       .post('/api/v1/investments')
       .set('Origin', ORIGIN)
-      .send({ propertyId: property.id, amountFils: dirhamToFils('5000').toString() });
+      .send({ propertyId: property.id, amountCents: dollarsToCents('5000').toString() });
 
     expect(res.status).toBe(409);
   });
@@ -199,7 +199,7 @@ describe('creating an investment', () => {
     const res = await agent
       .post('/api/v1/investments')
       .set('Origin', ORIGIN)
-      .send({ propertyId: property.id, amountFils: dirhamToFils('10000').toString() });
+      .send({ propertyId: property.id, amountCents: dollarsToCents('10000').toString() });
 
     expect(res.status).toBe(201);
     const after = await prisma.property.findUniqueOrThrow({ where: { id: property.id } });
@@ -225,7 +225,7 @@ describe('creating an investment', () => {
       .post('/api/v1/investments')
       .set('Origin', ORIGIN)
       .set('Cookie', cookie)
-      .send({ propertyId: property.id, amountFils: dirhamToFils('5000').toString() });
+      .send({ propertyId: property.id, amountCents: dollarsToCents('5000').toString() });
 
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('EMAIL_NOT_VERIFIED');
@@ -254,7 +254,7 @@ describe('concurrency', () => {
         agent
           .post('/api/v1/investments')
           .set('Origin', ORIGIN)
-          .send({ propertyId: property.id, amountFils: dirhamToFils('10000').toString() }),
+          .send({ propertyId: property.id, amountCents: dollarsToCents('10000').toString() }),
       ),
     );
 
@@ -263,8 +263,8 @@ describe('concurrency', () => {
 
     const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId } });
     // The invariant that holds no matter how the race resolves.
-    expect(wallet.balanceFils >= 0n).toBe(true);
-    expect(wallet.balanceFils).toBe(0n);
+    expect(wallet.balanceCents >= 0n).toBe(true);
+    expect(wallet.balanceCents).toBe(0n);
     expect(await prisma.investment.count({ where: { userId } })).toBe(1);
     await assertLedgerIntegrity(userId);
   });
@@ -286,7 +286,7 @@ describe('concurrency', () => {
         agent
           .post('/api/v1/investments')
           .set('Origin', ORIGIN)
-          .send({ propertyId: property.id, amountFils: dirhamToFils('10000').toString() }),
+          .send({ propertyId: property.id, amountCents: dollarsToCents('10000').toString() }),
       ),
     );
 
@@ -294,8 +294,8 @@ describe('concurrency', () => {
 
     const after = await prisma.property.findUniqueOrThrow({ where: { id: property.id } });
     // The invariant: a property can never be funded beyond its own value.
-    expect(after.fundedFils <= after.totalValueFils).toBe(true);
-    expect(after.fundedFils).toBe(after.totalValueFils);
+    expect(after.fundedCents <= after.totalValueCents).toBe(true);
+    expect(after.fundedCents).toBe(after.totalValueCents);
 
     // And every participant's books must still balance.
     for (const { userId } of users) await assertLedgerIntegrity(userId);
@@ -309,18 +309,18 @@ describe('concurrency', () => {
     await winner.agent
       .post('/api/v1/investments')
       .set('Origin', ORIGIN)
-      .send({ propertyId: property.id, amountFils: dirhamToFils('10000').toString() });
+      .send({ propertyId: property.id, amountCents: dollarsToCents('10000').toString() });
 
     const res = await loser.agent
       .post('/api/v1/investments')
       .set('Origin', ORIGIN)
-      .send({ propertyId: property.id, amountFils: dirhamToFils('10000').toString() });
+      .send({ propertyId: property.id, amountCents: dollarsToCents('10000').toString() });
 
     expect(res.status).toBe(409);
 
     // The debit must have rolled back — no charge for a stake never received.
     const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId: loser.userId } });
-    expect(wallet.balanceFils).toBe(dirhamToFils('50000'));
+    expect(wallet.balanceCents).toBe(dollarsToCents('50000'));
     expect(await prisma.investment.count({ where: { userId: loser.userId } })).toBe(0);
   });
 });

@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { computeAccrual, addMonths } from './accrual';
-import { formatAed } from '../../lib/money';
+import { formatUsd } from '../../lib/money';
 import { generateToken } from '../../lib/crypto';
 import {
   belowMinimumInvestment,
@@ -19,10 +19,10 @@ export interface HoldingView {
     city: string;
     image: string | null;
   };
-  principalFils: bigint;
-  accruedFils: bigint;
-  currentValueFils: bigint;
-  projectedTotalFils: bigint;
+  principalCents: bigint;
+  accruedCents: bigint;
+  currentValueCents: bigint;
+  projectedTotalCents: bigint;
   annualReturnBps: number;
   termMonths: number;
   investedAt: Date;
@@ -34,9 +34,9 @@ export interface HoldingView {
 
 export interface PortfolioView {
   holdingCount: number;
-  totalInvestedFils: bigint;
-  currentValueFils: bigint;
-  accruedFils: bigint;
+  totalInvestedCents: bigint;
+  currentValueCents: bigint;
+  accruedCents: bigint;
   holdings: HoldingView[];
 }
 
@@ -58,7 +58,7 @@ export async function getPortfolio(userId: string, now = new Date()): Promise<Po
   const holdings: HoldingView[] = investments.map((inv) => {
     const accrual = computeAccrual(
       {
-        principalFils: inv.principalFils,
+        principalCents: inv.principalCents,
         annualReturnBps: inv.annualReturnBps,
         investedAt: inv.investedAt,
         maturesAt: inv.maturesAt,
@@ -75,10 +75,10 @@ export async function getPortfolio(userId: string, now = new Date()): Promise<Po
         city: inv.property.city,
         image: inv.property.images[0] ?? null,
       },
-      principalFils: accrual.principalFils,
-      accruedFils: accrual.accruedFils,
-      currentValueFils: accrual.currentValueFils,
-      projectedTotalFils: accrual.projectedTotalFils,
+      principalCents: accrual.principalCents,
+      accruedCents: accrual.accruedCents,
+      currentValueCents: accrual.currentValueCents,
+      projectedTotalCents: accrual.projectedTotalCents,
       annualReturnBps: inv.annualReturnBps,
       termMonths: inv.termMonths,
       investedAt: inv.investedAt,
@@ -91,14 +91,14 @@ export async function getPortfolio(userId: string, now = new Date()): Promise<Po
 
   // Sum with BigInt, never by mapping to Number first — that is exactly the
   // drift this codebase exists to avoid.
-  const totalInvestedFils = holdings.reduce((sum, h) => sum + h.principalFils, 0n);
-  const accruedFils = holdings.reduce((sum, h) => sum + h.accruedFils, 0n);
+  const totalInvestedCents = holdings.reduce((sum, h) => sum + h.principalCents, 0n);
+  const accruedCents = holdings.reduce((sum, h) => sum + h.accruedCents, 0n);
 
   return {
     holdingCount: holdings.length,
-    totalInvestedFils,
-    accruedFils,
-    currentValueFils: totalInvestedFils + accruedFils,
+    totalInvestedCents,
+    accruedCents,
+    currentValueCents: totalInvestedCents + accruedCents,
     holdings,
   };
 }
@@ -121,7 +121,7 @@ export async function getPortfolio(userId: string, now = new Date()): Promise<Po
 export async function createInvestment(
   userId: string,
   propertyId: string,
-  amountFils: bigint,
+  amountCents: bigint,
 ) {
   const property = await prisma.property.findUnique({ where: { id: propertyId } });
   if (!property || property.status === 'DRAFT') throw notFound('Property not found.');
@@ -130,10 +130,10 @@ export async function createInvestment(
   // the conditional updates below are, because state can change between here
   // and the transaction.
   if (property.status !== 'OPEN') throw propertyUnavailable();
-  if (amountFils < property.minInvestmentFils) {
-    throw belowMinimumInvestment(formatAed(property.minInvestmentFils));
+  if (amountCents < property.minInvestmentCents) {
+    throw belowMinimumInvestment(formatUsd(property.minInvestmentCents));
   }
-  if (amountFils > property.totalValueFils - property.fundedFils) {
+  if (amountCents > property.totalValueCents - property.fundedCents) {
     throw propertyUnavailable('That is more than the property has remaining.');
   }
 
@@ -150,8 +150,8 @@ export async function createInvestment(
     let debited;
     try {
       debited = await tx.wallet.update({
-        where: { id: wallet.id, balanceFils: { gte: amountFils } },
-        data: { balanceFils: { decrement: amountFils } },
+        where: { id: wallet.id, balanceCents: { gte: amountCents } },
+        data: { balanceCents: { decrement: amountCents } },
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
@@ -165,10 +165,10 @@ export async function createInvestment(
     // Prisma's field references cannot express.
     const claimed = await tx.$executeRaw`
       UPDATE "Property"
-      SET "fundedFils" = "fundedFils" + ${amountFils}
+      SET "fundedCents" = "fundedCents" + ${amountCents}
       WHERE id = ${propertyId}::uuid
         AND status = 'OPEN'
-        AND "fundedFils" + ${amountFils} <= "totalValueFils"
+        AND "fundedCents" + ${amountCents} <= "totalValueCents"
     `;
     if (claimed === 0) {
       // Someone took the remaining allocation first. Throwing rolls back the
@@ -181,7 +181,7 @@ export async function createInvestment(
       data: {
         userId,
         propertyId,
-        principalFils: amountFils,
+        principalCents: amountCents,
         // Snapshot the terms. Editing the property later must never change
         // what an existing investor already agreed to.
         annualReturnBps: property.annualReturnBps,
@@ -195,8 +195,8 @@ export async function createInvestment(
       data: {
         walletId: wallet.id,
         type: 'INVESTMENT',
-        amountFils: -amountFils, // debits are negative
-        balanceAfterFils: debited.balanceFils,
+        amountCents: -amountCents, // debits are negative
+        balanceAfterCents: debited.balanceCents,
         reference: `inv_${investment.id}_${generateToken().slice(0, 12)}`,
         description: `Investment in ${property.title}`,
         investmentId: investment.id,
@@ -205,10 +205,10 @@ export async function createInvestment(
 
     // Close the property once it is fully subscribed.
     const fresh = await tx.property.findUniqueOrThrow({ where: { id: propertyId } });
-    if (fresh.fundedFils >= fresh.totalValueFils && fresh.status === 'OPEN') {
+    if (fresh.fundedCents >= fresh.totalValueCents && fresh.status === 'OPEN') {
       await tx.property.update({ where: { id: propertyId }, data: { status: 'FUNDED' } });
     }
 
-    return { investment, balanceAfterFils: debited.balanceFils };
+    return { investment, balanceAfterCents: debited.balanceCents };
   });
 }

@@ -1,14 +1,14 @@
 import { cookies } from 'next/headers';
 import { API_URL } from './api';
-import type { Fils } from './money';
+import type { Cents } from './money';
 
 export interface Holding {
   id: string;
   property: { slug: string; title: string; area: string; city: string; image: string | null };
-  principalFils: Fils;
-  accruedFils: Fils;
-  currentValueFils: Fils;
-  projectedTotalFils: Fils;
+  principalCents: Cents;
+  accruedCents: Cents;
+  currentValueCents: Cents;
+  projectedTotalCents: Cents;
   annualReturnBps: number;
   termMonths: number;
   investedAt: string;
@@ -20,9 +20,9 @@ export interface Holding {
 
 export interface Portfolio {
   holdingCount: number;
-  totalInvestedFils: Fils;
-  currentValueFils: Fils;
-  accruedFils: Fils;
+  totalInvestedCents: Cents;
+  currentValueCents: Cents;
+  accruedCents: Cents;
   holdings: Holding[];
 }
 

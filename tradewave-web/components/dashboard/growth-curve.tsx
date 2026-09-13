@@ -1,5 +1,5 @@
 import type { Holding } from '@/lib/investments';
-import { filsToNumber } from '@/lib/money';
+import { centsToNumber } from '@/lib/money';
 
 /**
  * Returns accrued over time.
@@ -17,8 +17,8 @@ import { filsToNumber } from '@/lib/money';
  * Mirrors the server's simple-interest rule. Display only — the authoritative
  * figures come from GET /portfolio.
  */
-function accruedAtFils(holding: Holding, at: number): number {
-  const principal = filsToNumber(holding.principalFils);
+function accruedAtCents(holding: Holding, at: number): number {
+  const principal = centsToNumber(holding.principalCents);
   const start = new Date(holding.investedAt).getTime();
   const end = new Date(holding.maturesAt).getTime();
   if (at <= start) return 0; // not yet held — accrues nothing
@@ -39,7 +39,7 @@ export function GrowthCurve({ holdings }: { holdings: Holding[] }) {
 
   const series = Array.from({ length: POINTS }, (_, i) => {
     const at = start + ((end - start) * i) / (POINTS - 1);
-    return holdings.reduce((sum, h) => sum + accruedAtFils(h, at), 0);
+    return holdings.reduce((sum, h) => sum + accruedAtCents(h, at), 0);
   });
 
   // Anchored at zero, not at the series minimum: accrual starts from nothing,

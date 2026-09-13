@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { Holding } from '@/lib/investments';
-import { formatAed, formatBps } from '@/lib/money';
+import { formatUsd, formatBps } from '@/lib/money';
 
 export function HoldingCard({ holding }: { holding: Holding }) {
   const pct = Math.round(holding.progress * 100);
@@ -37,11 +37,11 @@ export function HoldingCard({ holding }: { holding: Holding }) {
           </div>
           <div className="text-right">
             <p className="text-[0.9375rem] font-semibold tabular-nums text-foreground">
-              {formatAed(holding.currentValueFils)}
+              {formatUsd(holding.currentValueCents)}
             </p>
             {/* gain, never brand green — this is a number going up. */}
             <p className="text-[0.75rem] font-medium tabular-nums text-gain">
-              +{formatAed(holding.accruedFils)}
+              +{formatUsd(holding.accruedCents)}
             </p>
           </div>
         </div>

@@ -229,11 +229,11 @@ model Property {
   country     String   @default("AE")
   images      String[]
 
-  totalValueFils    BigInt
-  minInvestmentFils BigInt
+  totalValueCents    BigInt
+  minInvestmentCents BigInt
   // Denormalised funding total. ONLY ever written inside the invest
   // transaction, via a conditional UPDATE that cannot oversubscribe.
-  fundedFils        BigInt @default(0)
+  fundedCents        BigInt @default(0)
 
   annualReturnBps Int // 1800 = 18.00% per annum
   termMonths      Int
@@ -256,7 +256,7 @@ model Investment {
   propertyId String   @db.Uuid
   property   Property @relation(fields: [propertyId], references: [id])
 
-  principalFils BigInt
+  principalCents BigInt
 
   // Snapshot of the property terms at purchase time — deliberately NOT read
   // back from Property. Editing a property's rate later must never change the
@@ -282,7 +282,7 @@ model Wallet {
 
   // Cached balance. NEVER written outside the same transaction as its
   // LedgerEntry — a balance that has drifted from its history is unauditable.
-  balanceFils BigInt @default(0)
+  balanceCents BigInt @default(0)
 
   entries LedgerEntry[]
 
@@ -296,8 +296,8 @@ model LedgerEntry {
   wallet   Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
   type             LedgerEntryType
-  amountFils       BigInt // signed: credit positive, debit negative
-  balanceAfterFils BigInt // snapshot, so a row can be audited in isolation
+  amountCents       BigInt // signed: credit positive, debit negative
+  balanceAfterCents BigInt // snapshot, so a row can be audited in isolation
 
   // Idempotency key. A replayed payment webhook cannot double-credit, because
   // the second insert violates this constraint at the database level.
@@ -317,9 +317,9 @@ model Deposit {
   userId String @db.Uuid
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  amountFils  BigInt
+  amountCents BigInt
   status      DepositStatus @default(PENDING)
-  provider    String        @default("paystack")
+  provider    String        @default("klasha")
   providerRef String        @unique
   paidAt      DateTime?
 
@@ -331,12 +331,25 @@ model Deposit {
 
 // Append-only rate history rather than one mutable row, so a historical display
 // can be reproduced and a bad rate edit is recoverable.
+//
+// This holds USD -> NGN only. The AED figure shown on property pages is NOT in
+// here: the dirham is pegged to the dollar, so it is a constant in lib/money.ts
+// rather than a rate anyone has to keep current.
+//
+// The stored rate is the CUSTOMER rate, spread already applied — the number the
+// user was quoted and the number they are credited at. `midMinorPerUnit` keeps
+// the market rate it was derived from, so the spread earned on any deposit is
+// reconstructable after the fact.
 model FxRate {
-  id            String   @id @default(uuid()) @db.Uuid
-  baseCurrency  String   @default("AED")
-  quoteCurrency String   @default("USD")
-  filsPerUnit   BigInt // fils per 1 USD. AED is pegged at 3.6725 -> 36725 (x100 scale)
-  effectiveAt   DateTime @default(now())
+  id              String   @id @default(uuid()) @db.Uuid
+  baseCurrency    String   @default("USD")
+  quoteCurrency   String   @default("NGN")
+  // Kobo per 1 USD: ₦1,650.00/$ is 165_000. No extra scale factor — a kobo is
+  // already finer than any rate a treasury desk would publish.
+  minorPerUnit    BigInt
+  midMinorPerUnit BigInt?
+  setByUserId     String?  @db.Uuid
+  effectiveAt     DateTime @default(now())
 
   @@index([baseCurrency, quoteCurrency, effectiveAt])
 }

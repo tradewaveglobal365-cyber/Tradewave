@@ -14,21 +14,21 @@
  */
 
 /**
- * Whole-dirham formatter for marketing figures.
+ * Whole-dollar formatter for marketing figures.
  *
- * Deliberately NOT `lib/money.ts`. That module parses the API's fils strings for
- * a UI that reconciles to the fils; this page has no API data and no fils —
- * it formats plain dirham numbers typed into this file and computed in the
- * calculator. Locale and currency match the convention in README.md.
+ * Deliberately NOT `lib/money.ts`. That module parses the API's cents strings
+ * for a UI that reconciles to the cent; this page has no API data and no cents
+ * — it formats plain dollar numbers typed into this file and computed in the
+ * calculator.
  */
-const aed = new Intl.NumberFormat('en-AE', {
+const usd = new Intl.NumberFormat('en-US', {
   style: 'currency',
-  currency: 'AED',
+  currency: 'USD',
   maximumFractionDigits: 0,
 });
 
-export function formatAed(dirhams: number): string {
-  return aed.format(dirhams);
+export function formatUsd(dollars: number): string {
+  return usd.format(dollars);
 }
 
 /** 780 -> "7.8%" — mirrors formatBps in lib/money.ts, kept local on purpose. */
@@ -38,21 +38,22 @@ export function formatBps(bps: number): string {
 }
 
 /**
- * "AED 18.5M", "AED 1.65M" — for property values, where the exact dirham is
- * noise and the order of magnitude is the whole point.
+ * "$5M", "$1.96M" — for property values, where the exact dollar is noise and
+ * the order of magnitude is the whole point.
  *
- * NOT `formatAedCompact` from lib/money.ts. That one takes the API's fils
- * strings and is mid-migration; this takes a plain dirham number typed into
- * this file. Same name, different input, deliberately not shared.
+ * NOT `formatUsdCompact` from lib/money.ts. That one takes the API's cents
+ * strings; this takes a plain dollar number typed into this file. Same job,
+ * different input, deliberately not shared — this page is prerendered and has
+ * no API to read from.
  */
-export function formatAedCompact(dirhams: number): string {
-  if (dirhams >= 1_000_000) {
-    const millions = dirhams / 1_000_000;
-    // Two decimals, then strip what they added: 18.50 -> 18.5, 2.00 -> 2.
-    return `AED ${millions.toFixed(2).replace(/\.?0+$/, '')}M`;
+export function formatUsdCompact(dollars: number): string {
+  if (dollars >= 1_000_000) {
+    const millions = dollars / 1_000_000;
+    // Two decimals, then strip what they added: 1.96 stays, 5.00 -> 5.
+    return `$${millions.toFixed(2).replace(/\.?0+$/, '')}M`;
   }
-  if (dirhams >= 1_000) return `AED ${Math.round(dirhams / 1_000)}K`;
-  return formatAed(dirhams);
+  if (dollars >= 1_000) return `$${Math.round(dollars / 1_000)}K`;
+  return formatUsd(dollars);
 }
 
 /** 24 -> "24-month". Terms are always whole months on this platform. */
@@ -81,8 +82,8 @@ export const PROPERTIES = [
     summary: '5-bedroom beachfront villa on the Palm Jumeirah fronds.',
     area: 'Palm Jumeirah',
     city: 'Dubai',
-    totalValueAed: 18_500_000,
-    minInvestmentAed: 10_000,
+    totalValueUsd: 5_000_000,
+    minInvestmentUsd: 2_500,
     annualReturnBps: 690,
     termMonths: 36,
     image: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?w=800&q=75',
@@ -94,8 +95,8 @@ export const PROPERTIES = [
     summary: 'Full commercial floor in a Grade A Business Bay tower.',
     area: 'Business Bay',
     city: 'Dubai',
-    totalValueAed: 7_200_000,
-    minInvestmentAed: 5_000,
+    totalValueUsd: 1_960_000,
+    minInvestmentUsd: 1_250,
     annualReturnBps: 1050,
     termMonths: 36,
     image: 'https://images.unsplash.com/photo-1526495124232-a04e1849168c?w=800&q=75',
@@ -107,8 +108,8 @@ export const PROPERTIES = [
     summary: '1-bedroom high-floor unit overlooking Dubai Marina.',
     area: 'Dubai Marina',
     city: 'Dubai',
-    totalValueAed: 1_650_000,
-    minInvestmentAed: 1_000,
+    totalValueUsd: 450_000,
+    minInvestmentUsd: 250,
     annualReturnBps: 920,
     termMonths: 18,
     image: 'https://images.unsplash.com/photo-1528702748617-c64d49f918af?w=800&q=75',
@@ -120,8 +121,8 @@ export const PROPERTIES = [
     summary: '2-bedroom apartment with Burj Khalifa views in Downtown Dubai.',
     area: 'Downtown Dubai',
     city: 'Dubai',
-    totalValueAed: 2_850_000,
-    minInvestmentAed: 2_000,
+    totalValueUsd: 775_000,
+    minInvestmentUsd: 500,
     annualReturnBps: 780,
     termMonths: 24,
     image: 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=800&q=75',
@@ -133,8 +134,8 @@ export const PROPERTIES = [
     summary: 'Four 3-bedroom townhouses in Jumeirah Village Circle.',
     area: 'Jumeirah Village Circle',
     city: 'Dubai',
-    totalValueAed: 5_400_000,
-    minInvestmentAed: 2_500,
+    totalValueUsd: 1_470_000,
+    minInvestmentUsd: 750,
     annualReturnBps: 880,
     termMonths: 24,
     image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=75',
@@ -146,8 +147,8 @@ export const PROPERTIES = [
     summary: '2-bedroom waterfront apartment in Dubai Creek Harbour.',
     area: 'Dubai Creek Harbour',
     city: 'Dubai',
-    totalValueAed: 2_100_000,
-    minInvestmentAed: 1_500,
+    totalValueUsd: 570_000,
+    minInvestmentUsd: 400,
     annualReturnBps: 740,
     termMonths: 30,
     image: 'https://images.unsplash.com/photo-1582407947304-fd86f028f716?w=800&q=75',
@@ -171,7 +172,7 @@ export const AVG_YIELD_BPS = Math.round(
   PROPERTIES.reduce((sum, p) => sum + p.annualReturnBps, 0) / PROPERTIES.length,
 );
 /** The lowest entry ticket anywhere in the portfolio. */
-export const MIN_TICKET_AED = Math.min(...PROPERTIES.map((p) => p.minInvestmentAed));
+export const MIN_TICKET_USD = Math.min(...PROPERTIES.map((p) => p.minInvestmentUsd));
 
 export const SITE = {
   name: 'Tradewave',
@@ -205,7 +206,7 @@ export const HERO = {
   chips: [
     'DLD-registered title',
     'Freehold ownership',
-    `From ${formatAed(MIN_TICKET_AED)}`,
+    `From ${formatUsd(MIN_TICKET_USD)}`,
   ],
   image: {
     // Reuses a photo already vetted for the Dubai seed data.
@@ -223,7 +224,7 @@ export const TRUST_BAR = {
   ],
   stats: [
     // TODO(content): invented. Replace with real platform figures before launch.
-    { value: 'AED 48M', label: 'Capital deployed', placeholder: true },
+    { value: '$13M', label: 'Capital deployed', placeholder: true },
     // TODO(content): invented. Replace with the real investor count.
     { value: '2,400+', label: 'Investors onboarded', placeholder: true },
     // Derived: mean of the six seeded property rates. Safe to ship.
@@ -237,9 +238,9 @@ export const ABOUT = {
   eyebrow: 'What Tradewave is',
   heading: 'Property ownership, divided.',
   body: [
-    'A Palm Jumeirah villa costs eighteen million dirhams. That has always meant one of two things: you had eighteen million, or you had nothing to do with it.',
+    'A Palm Jumeirah villa costs five million dollars. That has always meant one of two things: you had five million, or you had nothing to do with it.',
     'Tradewave splits a single freehold property into fractions. You buy the fraction you can afford, and you own a real, proportional stake in a real, titled asset — not a fund unit, not a note, not exposure to an index.',
-    'Every property is title-verified and registered before it is listed. Your holding, the terms you agreed to, and every dirham that moves are recorded on an auditable ledger you can inspect at any time.',
+    'Every property is title-verified and registered before it is listed. Your holding, the terms you agreed to, and every dollar that moves are recorded on an auditable ledger you can inspect at any time.',
   ],
   points: [
     {
@@ -270,7 +271,7 @@ export const PROPERTY_SHOWCASE = {
   eyebrow: 'The portfolio',
   heading: 'What you would actually own.',
   description:
-    'Six freehold assets, from a one-bedroom in Marina to a Signature Villa on the Palm. Each one shows its value, yield, term and minimum before you commit a dirham.',
+    'Six freehold assets, from a one-bedroom in Marina to a Signature Villa on the Palm. Each one shows its value, yield, term and minimum before you commit a dollar.',
   /** Sign-in is one redirect away — say so, rather than letting it ambush them. */
   cardCta: 'View property',
   allCta: { label: 'View the full portfolio', href: '/properties' },
@@ -293,7 +294,7 @@ export const HOW_IT_WORKS = {
     {
       number: '02',
       title: 'Choose your property',
-      body: 'Browse title-verified listings across Downtown, Marina, Business Bay, JVC and the Palm. Each one shows its value, yield, term and minimum before you commit a dirham.',
+      body: 'Browse title-verified listings across Downtown, Marina, Business Bay, JVC and the Palm. Each one shows its value, yield, term and minimum before you commit a dollar.',
     },
     {
       number: '03',
@@ -384,7 +385,7 @@ export const RETURNS = {
     heading: 'Project your return',
     description:
       'Move the sliders to see what a holding would be worth at the end of its term.',
-    amount: { min: MIN_TICKET_AED, max: 500_000, step: 500, default: 25_000 },
+    amount: { min: MIN_TICKET_USD, max: 500_000, step: 500, default: 25_000 },
     terms: [12, 24, 36],
     defaultTermMonths: 24,
     yields: [MIN_YIELD_BPS, AVG_YIELD_BPS, MAX_YIELD_BPS],
@@ -399,9 +400,9 @@ export const RETURNS = {
 // Every claim here is verified against tradewave-api, not invented:
 //   · terms snapshot   prisma/schema.prisma:185-186 duplicates annualReturnBps
 //                      and termMonths onto the holding at purchase
-//   · ledger snapshot  prisma/schema.prisma:221 — balanceAfterFils, commented
+//   · ledger snapshot  prisma/schema.prisma:221 — balanceAfterCents, commented
 //                      "snapshot, so a row can be audited in isolation"
-//   · integer money    every amount is BigInt fils, serialised as strings
+//   · integer money    every amount is BigInt cents, serialised as strings
 //
 // ⚠️  This section makes NO claim about Tradewave's own licensing, regulatory
 // standing, or custody of client funds — the same line the FAQ holds, for the
@@ -425,7 +426,7 @@ export const SECURITY = {
     },
     {
       title: 'Exact amounts, never approximations',
-      body: 'Money is held as whole fils end to end — integers, never floating point. Balances do not drift by a hundredth of a dirham over thousands of entries, because there is nothing to round.',
+      body: 'Money is held as whole cents end to end — integers, never floating point. Balances do not drift by a cent over thousands of entries, because there is nothing to round.',
     },
     {
       title: 'Every investor is verified',
@@ -457,7 +458,7 @@ export const COMPARISON = {
     {
       label: 'Entry cost',
       cells: [
-        `From ${formatAed(MIN_TICKET_AED)}`,
+        `From ${formatUsd(MIN_TICKET_USD)}`,
         'Seven figures, plus fees and transfer costs',
         'Low — a share price',
         'Anything',
@@ -550,7 +551,7 @@ export const FAQ = {
   items: [
     {
       q: 'What is the minimum investment?',
-      a: `It depends on the property. The lowest entry ticket currently listed is ${formatAed(MIN_TICKET_AED)}; larger prime assets set a higher minimum. Every listing shows its minimum before you commit.`,
+      a: `It depends on the property. The lowest entry ticket currently listed is ${formatUsd(MIN_TICKET_USD)}; larger prime assets set a higher minimum. Every listing shows its minimum before you commit.`,
     },
     {
       q: 'What exactly do I own?',
@@ -569,7 +570,7 @@ export const FAQ = {
       // below is deliberately non-numeric so it is not false as written, but it
       // should be replaced with the actual figures before launch.
       q: 'What fees does Tradewave charge?',
-      a: 'There is no fee to open or hold an account. Any fee attached to an investment is shown in full on the listing, alongside the rate and term, before you commit a dirham to it.',
+      a: 'There is no fee to open or hold an account. Any fee attached to an investment is shown in full on the listing, alongside the rate and term, before you commit a dollar to it.',
       placeholder: true,
     },
     {
@@ -608,7 +609,7 @@ export const CTA = {
 
 export const STICKY_CTA = {
   label: 'Own a share from',
-  value: formatAed(MIN_TICKET_AED),
+  value: formatUsd(MIN_TICKET_USD),
   action: { label: 'Get started', href: '/signup' },
 } as const;
 

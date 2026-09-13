@@ -38,7 +38,7 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
 const title = 'Tradewave · Fractional Dubai real estate investment';
 const description =
-  'Own a share of freehold Dubai property from AED 1,000. Title-verified listings, registered with the Dubai Land Department, yielding 6.9%–10.5% a year.';
+  'Own a share of freehold Dubai property from $250. Title-verified listings, registered with the Dubai Land Department, yielding 6.9%–10.5% a year.';
 
 export const metadata: Metadata = {
   // app/layout.tsx uses `template: '%s'`, so this is the full title as written.

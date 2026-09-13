@@ -1,5 +1,5 @@
 import type { Property } from '@/lib/types';
-import { formatAedCompact } from '@/lib/money';
+import { formatUsdCompact } from '@/lib/money';
 
 export function FundingBar({ property }: { property: Property }) {
   const pct = Math.round(property.fundedProgress * 100);
@@ -9,7 +9,7 @@ export function FundingBar({ property }: { property: Property }) {
       <div className="mb-1.5 flex items-baseline justify-between text-[0.75rem]">
         <span className="font-medium text-foreground">{pct}% funded</span>
         <span className="text-muted-foreground">
-          {formatAedCompact(property.remainingFils)} left
+          {formatUsdCompact(property.remainingCents)} left
         </span>
       </div>
       <div

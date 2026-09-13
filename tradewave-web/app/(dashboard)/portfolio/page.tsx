@@ -24,8 +24,8 @@ export default async function PortfolioPage() {
         <>
           <section className="mb-6 grid gap-4 sm:grid-cols-3">
             <Tile label="Holdings" value={String(portfolio.holdingCount)} />
-            <Tile label="Total invested" value={formatAed(portfolio.totalInvestedFils)} />
-            <Tile label="Returns accrued" value={`+${formatAed(portfolio.accruedFils)}`} tone="gain" />
+            <Tile label="Total invested" value={formatAed(portfolio.totalInvestedCents)} />
+            <Tile label="Returns accrued" value={`+${formatAed(portfolio.accruedCents)}`} tone="gain" />
           </section>
 
           <div className="space-y-3">

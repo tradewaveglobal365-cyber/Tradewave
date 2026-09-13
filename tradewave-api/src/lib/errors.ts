@@ -91,5 +91,5 @@ export const propertyUnavailable = (message = 'This property is no longer accept
 
 export const belowMinimumInvestment = (minimum: string) =>
   new AppError(422, 'BELOW_MINIMUM', `The minimum investment for this property is ${minimum}.`, {
-    amountFils: `Minimum is ${minimum}`,
+    amountCents: `Minimum is ${minimum}`,
   });

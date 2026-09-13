@@ -2,7 +2,7 @@ import { cookies } from 'next/headers';
 import { API_URL } from './api';
 
 export interface WalletSummary {
-  balanceFils: string;
+  balanceCents: string;
 }
 
 /**

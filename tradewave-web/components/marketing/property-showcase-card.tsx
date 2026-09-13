@@ -2,8 +2,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowRight, MapPin } from 'lucide-react';
 import {
-  formatAed,
-  formatAedCompact,
+  formatUsd,
+  formatUsdCompact,
   formatBps,
   formatTerm,
   type PROPERTIES,
@@ -12,11 +12,11 @@ import {
 /**
  * Marketing property card.
  *
- * ⚠️  This deliberately does NOT reuse `components/properties/property-card.tsx`.
- * That component imports `lib/money.ts` and `lib/types.ts`, both of which are
- * mid-migration from Naira to dirhams — `formatAedCompact()` there still returns
- * `₦2.9M`. Importing it would put Naira prices on the public homepage. The
- * duplication is the lesser problem, and it is temporary.
+ * This deliberately does NOT reuse `components/properties/property-card.tsx`.
+ * That component takes the API's cents STRINGS; this page is prerendered at
+ * build time with plain numbers typed into `content/home.ts` and never calls the
+ * API at all. The two take different inputs, so sharing one component would mean
+ * a union type and a branch in every formatter call.
  *
  * Shows only what is fixed at listing: value, yield, term, minimum. It shows NO
  * funding progress, no "% funded", no investor count. Those are live state, this
@@ -60,7 +60,7 @@ export function PropertyShowcaseCard({
           <div>
             <p className="text-[0.6875rem] text-muted-foreground">Property value</p>
             <p className="text-[1.0625rem] font-semibold tabular-nums text-foreground">
-              {formatAedCompact(property.totalValueAed)}
+              {formatUsdCompact(property.totalValueUsd)}
             </p>
           </div>
           <div className="text-right">
@@ -79,7 +79,7 @@ export function PropertyShowcaseCard({
           <p className="text-[0.75rem] text-muted-foreground">
             From{' '}
             <span className="font-medium text-foreground">
-              {formatAed(property.minInvestmentAed)}
+              {formatUsd(property.minInvestmentUsd)}
             </span>{' '}
             &middot; {formatTerm(property.termMonths)} term
           </p>

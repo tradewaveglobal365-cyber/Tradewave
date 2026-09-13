@@ -33,11 +33,11 @@ investmentActionRouter.post(
   validateBody(createInvestmentSchema),
   async (req: Request, res: Response) => {
     if (!req.auth) throw unauthorized();
-    const { propertyId, amountFils } = req.body as CreateInvestmentInput;
-    const result = await createInvestment(req.auth.userId, propertyId, amountFils);
+    const { propertyId, amountCents } = req.body as CreateInvestmentInput;
+    const result = await createInvestment(req.auth.userId, propertyId, amountCents);
     res.status(201).json({
       investment: { id: result.investment.id, maturesAt: result.investment.maturesAt },
-      balanceFils: result.balanceAfterFils,
+      balanceCents: result.balanceAfterCents,
     });
   },
 );

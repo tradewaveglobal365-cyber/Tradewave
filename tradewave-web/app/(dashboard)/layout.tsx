@@ -15,11 +15,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   // GET /wallet does not exist yet; fall back to zero rather than hiding the
   // panel, so the layout is already correct when the endpoint lands.
-  const balanceFils = wallet?.balanceFils ?? '0';
+  const balanceCents = wallet?.balanceCents ?? '0';
 
   return (
     <div className="flex min-h-dvh bg-canvas">
-      <Sidebar balanceFils={balanceFils} />
+      <Sidebar balanceCents={balanceCents} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile top bar — the sidebar is hidden below lg. */}
@@ -44,7 +44,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         </main>
       </div>
 
-      <MobileNav balanceFils={balanceFils} />
+      <MobileNav balanceCents={balanceCents} />
     </div>
   );
 }

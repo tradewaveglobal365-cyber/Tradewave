@@ -22,7 +22,7 @@ export default async function DashboardPage() {
   ]);
   if (!user) redirect('/login?next=/dashboard');
 
-  const balanceFils = wallet?.balanceFils ?? '0';
+  const balanceCents = wallet?.balanceCents ?? '0';
   const hasHoldings = (portfolio?.holdingCount ?? 0) > 0;
 
   return (
@@ -36,17 +36,17 @@ export default async function DashboardPage() {
         }
       />
 
-      <SetupChecklist user={user} hasBalance={Number(balanceFils) > 0} />
+      <SetupChecklist user={user} hasBalance={Number(balanceCents) > 0} />
 
       {hasHoldings && portfolio ? (
         <>
           <section className="rounded-xl border border-hairline bg-surface p-6">
             <div className="grid gap-6 sm:grid-cols-3">
-              <Stat label="Total invested" value={formatAed(portfolio.totalInvestedFils)} />
-              <Stat label="Current value" value={formatAed(portfolio.currentValueFils)} strong />
+              <Stat label="Total invested" value={formatAed(portfolio.totalInvestedCents)} />
+              <Stat label="Current value" value={formatAed(portfolio.currentValueCents)} strong />
               <Stat
                 label="Returns accrued"
-                value={`+${formatAed(portfolio.accruedFils)}`}
+                value={`+${formatAed(portfolio.accruedCents)}`}
                 tone="gain"
               />
             </div>

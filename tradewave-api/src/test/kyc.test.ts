@@ -4,7 +4,7 @@ import { createApp } from '../app';
 import { prisma } from '../lib/prisma';
 import { emailService } from '../services/email';
 import { kycProvider } from '../services/kyc';
-import { dirhamToFils } from '../lib/money';
+import { dollarsToCents } from '../lib/money';
 import { migrateTestDatabase, resetDatabase } from './helpers';
 
 const app = createApp();
@@ -58,8 +58,8 @@ async function createProperty() {
       area: 'Downtown Dubai',
       city: 'Dubai',
       images: [],
-      totalValueFils: dirhamToFils('100000'),
-      minInvestmentFils: dirhamToFils('1000'),
+      totalValueCents: dollarsToCents('100000'),
+      minInvestmentCents: dollarsToCents('1000'),
       annualReturnBps: 800,
       termMonths: 24,
       status: 'OPEN',
@@ -147,12 +147,12 @@ describe('the investment gate', () => {
   it('blocks investing until identity is verified, and lifts without a new token', async () => {
     const { agent, userId } = await createUser('gate@example.com');
     await prisma.wallet.create({
-      data: { userId, balanceFils: dirhamToFils('50000') },
+      data: { userId, balanceCents: dollarsToCents('50000') },
     });
     const property = await createProperty();
     const body = {
       propertyId: property.id,
-      amountFils: dirhamToFils('10000').toString(),
+      amountCents: dollarsToCents('10000').toString(),
     };
 
     const blocked = await agent
@@ -185,7 +185,7 @@ describe('the investment gate', () => {
 
     const res = await agent.post('/api/v1/investments').set('Origin', ORIGIN).send({
       propertyId: property.id,
-      amountFils: dirhamToFils('1000').toString(),
+      amountCents: dollarsToCents('1000').toString(),
     });
 
     expect(res.status).toBe(403);

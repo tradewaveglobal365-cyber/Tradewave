@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
-import { RETURNS, formatAed, formatBps } from '@/content/home';
+import { RETURNS, formatUsd, formatBps } from '@/content/home';
 import { cn } from '@/lib/utils';
 
 const { calculator } = RETURNS;
@@ -9,7 +9,7 @@ const { calculator } = RETURNS;
 /**
  * Projected total return over a full term.
  *
- * ⚠️  This mirrors `projectedReturnFils()` in
+ * ⚠️  This mirrors `projectedReturnCents()` in
  * tradewave-api/src/modules/property/property.service.ts:
  *
  *     principal × bps × months ÷ (10 000 × 12)
@@ -18,8 +18,8 @@ const { calculator } = RETURNS;
  * has to change with it — a marketing page that quotes a better number than the
  * product pays is the worst possible bug to ship here.
  *
- * Plain floating-point is acceptable in this one place: these are whole dirhams
- * typed by a visitor moving a slider, not fils being moved between ledgers.
+ * Plain floating-point is acceptable in this one place: these are whole dollars
+ * typed by a visitor moving a slider, not cents being moved between ledgers.
  */
 function projectedReturn(principal: number, bps: number, months: number): number {
   return (principal * bps * months) / (10_000 * 12);
@@ -56,7 +56,7 @@ export function ReturnsCalculator() {
               htmlFor={amountId}
               className="text-[1.125rem] font-semibold tabular-nums text-foreground"
             >
-              {formatAed(amount)}
+              {formatUsd(amount)}
             </output>
           </div>
           <input
@@ -70,8 +70,8 @@ export function ReturnsCalculator() {
             className="mt-3.5 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-brand-700 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
           />
           <div className="mt-2 flex justify-between text-[0.75rem] text-muted-foreground">
-            <span>{formatAed(calculator.amount.min)}</span>
-            <span>{formatAed(calculator.amount.max)}</span>
+            <span>{formatUsd(calculator.amount.min)}</span>
+            <span>{formatUsd(calculator.amount.max)}</span>
           </div>
         </div>
 
@@ -104,9 +104,9 @@ export function ReturnsCalculator() {
         aria-live="polite"
         className="mt-8 grid gap-4 border-t border-hairline pt-7 sm:grid-cols-3"
       >
-        <Figure label="Total return" value={formatAed(Math.round(gain))} tone="gain" />
-        <Figure label="Average per month" value={formatAed(Math.round(monthly))} tone="gain" />
-        <Figure label="Value at maturity" value={formatAed(Math.round(total))} />
+        <Figure label="Total return" value={formatUsd(Math.round(gain))} tone="gain" />
+        <Figure label="Average per month" value={formatUsd(Math.round(monthly))} tone="gain" />
+        <Figure label="Value at maturity" value={formatUsd(Math.round(total))} />
       </dl>
 
       <p className="mt-6 text-[0.75rem] leading-relaxed text-muted-foreground">

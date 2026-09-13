@@ -4,7 +4,7 @@ const DAYS_PER_YEAR = 365n;
 const MS_PER_DAY = 86_400_000;
 
 export interface AccrualInput {
-  principalFils: bigint;
+  principalCents: bigint;
   /** Snapshotted onto the Investment at purchase, NOT read from the Property. */
   annualReturnBps: number;
   investedAt: Date;
@@ -12,11 +12,11 @@ export interface AccrualInput {
 }
 
 export interface AccrualResult {
-  principalFils: bigint;
-  accruedFils: bigint;
-  currentValueFils: bigint;
+  principalCents: bigint;
+  accruedCents: bigint;
+  currentValueCents: bigint;
   /** What the holding is worth at maturity — the number shown as "projected". */
-  projectedTotalFils: bigint;
+  projectedTotalCents: bigint;
   elapsedDays: number;
   termDays: number;
   /** 0..1, for progress bars. */
@@ -43,10 +43,10 @@ function wholeDaysBetween(from: Date, to: Date): number {
  *   accrued = principal × bps × elapsedDays ÷ (10_000 × 365)
  *
  * Multiplication before division — BigInt division truncates, so dividing early
- * silently discards fils on every call.
+ * silently discards cents on every call.
  */
 export function computeAccrual(input: AccrualInput, now: Date = new Date()): AccrualResult {
-  const { principalFils, annualReturnBps, investedAt, maturesAt } = input;
+  const { principalCents, annualReturnBps, investedAt, maturesAt } = input;
 
   const termDays = wholeDaysBetween(investedAt, maturesAt);
   const isMatured = now.getTime() >= maturesAt.getTime();
@@ -56,20 +56,20 @@ export function computeAccrual(input: AccrualInput, now: Date = new Date()): Acc
   const effectiveDate = isMatured ? maturesAt : now;
   const elapsedDays = Math.min(wholeDaysBetween(investedAt, effectiveDate), termDays);
 
-  const accruedFils =
-    (principalFils * BigInt(annualReturnBps) * BigInt(elapsedDays)) /
+  const accruedCents =
+    (principalCents * BigInt(annualReturnBps) * BigInt(elapsedDays)) /
     (BPS_DENOMINATOR * DAYS_PER_YEAR);
 
-  const projectedTotalFils =
-    principalFils +
-    (principalFils * BigInt(annualReturnBps) * BigInt(termDays)) /
+  const projectedTotalCents =
+    principalCents +
+    (principalCents * BigInt(annualReturnBps) * BigInt(termDays)) /
       (BPS_DENOMINATOR * DAYS_PER_YEAR);
 
   return {
-    principalFils,
-    accruedFils,
-    currentValueFils: principalFils + accruedFils,
-    projectedTotalFils,
+    principalCents,
+    accruedCents,
+    currentValueCents: principalCents + accruedCents,
+    projectedTotalCents,
     elapsedDays,
     termDays,
     progress: termDays === 0 ? 1 : Math.min(1, elapsedDays / termDays),

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { MoreHorizontal, X } from 'lucide-react';
 import { PRIMARY_ITEMS, SECONDARY_ITEMS, isActive } from '@/lib/nav';
-import { formatAed } from '@/lib/money';
+import { formatUsd } from '@/lib/money';
 import { cn } from '@/lib/utils';
 
 /**
@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
  * Four primary destinations plus "More", because five is the practical ceiling
  * before targets get too narrow to hit. Everything else lives in the sheet.
  */
-export function MobileNav({ balanceFils }: { balanceFils: string }) {
+export function MobileNav({ balanceCents }: { balanceCents: string }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -48,7 +48,7 @@ export function MobileNav({ balanceFils }: { balanceFils: string }) {
                 Wallet balance
               </p>
               <p className="mt-1 text-[1.25rem] leading-none font-semibold tabular-nums text-white">
-                {formatAed(balanceFils)}
+                {formatUsd(balanceCents)}
               </p>
             </div>
 

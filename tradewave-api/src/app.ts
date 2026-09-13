@@ -28,7 +28,7 @@ export function createApp(): Express {
 
   // JSON.stringify throws a TypeError on BigInt rather than serialising it, so
   // without this every money-bearing response 500s. Money leaves the API as a
-  // STRING of fils — a JSON number would invite arithmetic on the client.
+  // STRING of cents — a JSON number would invite arithmetic on the client.
   app.set('json replacer', bigintReplacer);
 
   app.use(

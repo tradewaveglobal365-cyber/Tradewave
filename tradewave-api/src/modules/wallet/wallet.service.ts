@@ -1,12 +1,12 @@
 import { prisma } from '../../lib/prisma';
 
 export interface WalletView {
-  balanceFils: bigint;
+  balanceCents: bigint;
   entries: {
     id: string;
     type: string;
-    amountFils: bigint;
-    balanceAfterFils: bigint;
+    amountCents: bigint;
+    balanceAfterCents: bigint;
     description: string;
     createdAt: Date;
   }[];
@@ -29,12 +29,12 @@ export async function getWallet(userId: string, entryLimit = 20): Promise<Wallet
   });
 
   return {
-    balanceFils: wallet.balanceFils,
+    balanceCents: wallet.balanceCents,
     entries: wallet.entries.map((e) => ({
       id: e.id,
       type: e.type,
-      amountFils: e.amountFils,
-      balanceAfterFils: e.balanceAfterFils,
+      amountCents: e.amountCents,
+      balanceAfterCents: e.balanceAfterCents,
       description: e.description,
       createdAt: e.createdAt,
     })),

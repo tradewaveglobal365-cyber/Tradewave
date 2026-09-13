@@ -215,7 +215,7 @@ export async function submit(userId: string): Promise<KycStatusView> {
 
   // The row is created BEFORE the provider call because its id is the correlation
   // key we hand over as vendor_data — it is what lets a webhook find its way back
-  // to this attempt. Written with the User update, the rule Wallet.balanceFils
+  // to this attempt. Written with the User update, the rule Wallet.balanceCents
   // follows against LedgerEntry: a status with no attempt behind it is unauditable.
   const attempt = await prisma.$transaction(async (tx) => {
     const created = await tx.kycVerification.create({

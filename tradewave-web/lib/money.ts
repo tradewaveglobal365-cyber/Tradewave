@@ -1,81 +1,95 @@
 /**
  * Display-side money helpers.
  *
- * The API sends money as a STRING of fils. This module parses it for rendering
- * and nothing else — the frontend never performs money arithmetic. Any figure a
- * user acts on (a balance, an accrual, a projection) is computed server-side
- * with exact integer maths and sent here already finished.
+ * The API sends money as a STRING of US cents. This module parses it for
+ * rendering and nothing else — the frontend never performs money arithmetic.
+ * Any figure a user acts on (a balance, an accrual, a projection) is computed
+ * server-side with exact integer maths and sent here already finished.
  *
  * Parsing to Number is safe at these magnitudes: MAX_SAFE_INTEGER is roughly
- * AED 90 trillion in fils.
+ * $90 trillion in cents.
  */
 
-export type Fils = string;
+export type Cents = string;
 
 /**
  * The AED/USD peg: 3.6725 dirham to the dollar, unchanged since 1997.
- * Held in fils per dollar at x100 scale to keep the quarter-fil exact.
- * Mirrors PEGGED_FILS_PER_USD in tradewave-api/src/lib/money.ts.
+ * Held ×10,000 to keep all four decimals as an integer.
+ * Mirrors AED_PER_USD_X10000 in tradewave-api/src/lib/money.ts.
+ *
+ * The ledger is in dollars; this exists only so a Dubai property can also show
+ * its dirham price, which is the number the developer actually quotes.
  */
-export const PEGGED_FILS_PER_USD = 36_725;
+export const AED_PER_USD_X10000 = 36_725;
 
-export function filsToNumber(fils: Fils | number): number {
-  return typeof fils === 'number' ? fils : Number(fils);
+export function centsToNumber(cents: Cents | number): number {
+  return typeof cents === 'number' ? cents : Number(cents);
 }
 
-const dirhamFull = new Intl.NumberFormat('en-AE', {
+const usdFull = new Intl.NumberFormat('en-US', {
   style: 'currency',
-  currency: 'AED',
+  currency: 'USD',
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
 
-const dirhamWhole = new Intl.NumberFormat('en-AE', {
+const usdWhole = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  maximumFractionDigits: 0,
+});
+
+/** $1,234.56 — for balances and anything the user might reconcile to the cent. */
+export function formatUsd(cents: Cents | number): string {
+  return usdFull.format(centsToNumber(cents) / 100);
+}
+
+/** $200,000,000 — for headline figures where cents are noise. */
+export function formatUsdWhole(cents: Cents | number): string {
+  return usdWhole.format(centsToNumber(cents) / 100);
+}
+
+/** $200M / $450K — for dense cards where the full number does not fit. */
+export function formatUsdCompact(cents: Cents | number): string {
+  const dollars = centsToNumber(cents) / 100;
+  if (dollars >= 1_000_000_000)
+    return `$${(dollars / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
+  if (dollars >= 1_000_000) return `$${(dollars / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  // One decimal, matching the millions branch. Rounding to whole thousands
+  // turned a $2,500 minimum into "$3K" — overstating a minimum is the kind of
+  // rounding that actually misleads someone.
+  if (dollars >= 1_000) return `$${(dollars / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  return formatUsdWhole(cents);
+}
+
+const aedWhole = new Intl.NumberFormat('en-AE', {
   style: 'currency',
   currency: 'AED',
   maximumFractionDigits: 0,
 });
 
-/** AED 1,234.56 — for balances and anything the user might reconcile to the fils. */
-export function formatAed(fils: Fils | number): string {
-  return dirhamFull.format(filsToNumber(fils) / 100);
-}
-
-/** AED 200,000,000 — for headline figures where fils is noise. */
-export function formatAedWhole(fils: Fils | number): string {
-  return dirhamWhole.format(filsToNumber(fils) / 100);
-}
-
-/** AED 200M / AED 450M — for dense cards where the full number does not fit. */
-export function formatAedCompact(fils: Fils | number): string {
-  const dirham = filsToNumber(fils) / 100;
-  if (dirham >= 1_000_000_000) return `AED ${(dirham / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
-  if (dirham >= 1_000_000) return `AED ${(dirham / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-  // One decimal, matching the millions branch. Rounding to whole thousands
-  // turned a AED 2,500 minimum into "AED 3K" — overstating a minimum is the
-  // kind of rounding that actually misleads someone.
-  if (dirham >= 1_000) return `AED ${(dirham / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
-  return formatAedWhole(fils);
-}
-
 /**
- * USD conversion at the dirham peg.
+ * The same amount in dirhams, at the peg.
  *
- * Unlike a floating currency, AED has been pegged at 3.6725 to the dollar since
- * 1997, so this is an exact conversion rather than an estimate. `filsPerUsd`
- * still comes from the FxRate table rather than being hardcoded, so the display
- * survives the peg ever moving.
+ * Unlike a floating currency this is an exact conversion rather than an
+ * estimate, which is why it can be computed here instead of being sent by the
+ * server. Shown as a secondary figure on property pages — the asset is in
+ * Dubai and priced in dirhams, even though the investor holds dollars.
  */
-export function formatUsd(fils: Fils | number, filsPerUsd: Fils | number): string {
-  const rate = filsToNumber(filsPerUsd);
-  if (!rate) return '—';
-  // filsPerUsd is stored at x100 scale to preserve the quarter-fil in 3.6725.
-  const usd = (filsToNumber(fils) * 100) / rate;
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 0,
-  }).format(usd);
+export function formatAed(cents: Cents | number): string {
+  const fils = (centsToNumber(cents) * AED_PER_USD_X10000) / 10_000;
+  return aedWhole.format(fils / 100);
+}
+
+const ngnFull = new Intl.NumberFormat('en-NG', {
+  style: 'currency',
+  currency: 'NGN',
+  maximumFractionDigits: 0,
+});
+
+/** Naira, from kobo. Only ever a deposit figure — never a stored balance. */
+export function formatNgn(kobo: Cents | number): string {
+  return ngnFull.format(centsToNumber(kobo) / 100);
 }
 
 /** 1800 -> "18%", 1650 -> "16.5%" */
@@ -92,15 +106,14 @@ export function formatTerm(months: number): string {
   return `${months} months`;
 }
 
-
 /**
- * Parses what a user typed into fils, without a float round-trip.
+ * Parses what a user typed into cents, without a float round-trip.
  *
  * Accepts "10,000", "10000.50", " 10000 ". Returns null for anything that is
  * not a plain positive amount, so the caller can distinguish "empty" from
  * "invalid" rather than silently treating both as zero.
  */
-export function parseDirhamInput(value: string): number | null {
+export function parseDollarInput(value: string): number | null {
   const cleaned = value.replace(/[,\s]/g, '');
   if (cleaned === '') return null;
   if (!/^\d+(\.\d{0,2})?$/.test(cleaned)) return null;
@@ -111,17 +124,17 @@ export function parseDirhamInput(value: string): number | null {
 /**
  * Total return on a principal over a full term.
  *
- * MIRRORS projectedReturnFils in tradewave-api/src/modules/property/
+ * MIRRORS projectedReturnCents in tradewave-api/src/modules/property/
  * property.service.ts. This exists so the figure updates as the user types;
  * the server recomputes it on submit and its answer is authoritative. If the
  * two ever disagree, the server is right and this is the bug.
  *
  * Math.floor matches BigInt division truncating on the server.
  */
-export function projectedReturnFils(
-  principalFils: number,
+export function projectedReturnCents(
+  principalCents: number,
   annualReturnBps: number,
   termMonths: number,
 ): number {
-  return Math.floor((principalFils * annualReturnBps * termMonths) / (10_000 * 12));
+  return Math.floor((principalCents * annualReturnBps * termMonths) / (10_000 * 12));
 }

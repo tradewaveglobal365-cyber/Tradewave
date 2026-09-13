@@ -4,9 +4,10 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, MapPin, TrendingUp, Calendar, Wallet as WalletIcon } from 'lucide-react';
 import { getProperty } from '@/lib/properties';
 import {
+  formatAed,
   formatBps,
-  formatAedWhole,
-  formatAedCompact,
+  formatUsdWhole,
+  formatUsdCompact,
   formatTerm,
 } from '@/lib/money';
 import { FundingBar } from '@/components/properties/funding-bar';
@@ -83,7 +84,7 @@ export default async function PropertyDetailPage({
             <Metric
               icon={<WalletIcon className="size-4" />}
               label="Minimum"
-              value={formatAedCompact(property.minInvestmentFils)}
+              value={formatUsdCompact(property.minInvestmentCents)}
             />
           </div>
         </div>
@@ -92,7 +93,13 @@ export default async function PropertyDetailPage({
         <aside className="rounded-xl border border-hairline bg-surface p-6 lg:sticky lg:top-20">
           <p className="text-[0.75rem] font-medium text-muted-foreground">Property value</p>
           <p className="mt-1 text-[1.75rem] leading-none font-semibold tracking-[-0.02em] text-foreground">
-            {formatAedWhole(property.totalValueFils)}
+            {formatUsdWhole(property.totalValueCents)}
+          </p>
+          {/* The asset is in Dubai and the developer prices it in dirhams, so
+              the local figure is worth showing. Exact rather than indicative —
+              the dirham is pegged to the dollar at 3.6725. */}
+          <p className="mt-1 text-[0.75rem] text-muted-foreground">
+            {formatAed(property.totalValueCents)} at the AED/USD peg
           </p>
 
           <div className="mt-5">
@@ -100,14 +107,14 @@ export default async function PropertyDetailPage({
           </div>
 
           <dl className="mt-6 space-y-2.5 border-t border-hairline pt-5 text-[0.8125rem]">
-            <Row label="Minimum investment" value={formatAedWhole(property.minInvestmentFils)} />
+            <Row label="Minimum investment" value={formatUsdWhole(property.minInvestmentCents)} />
             <Row label="Declared return" value={`${formatBps(property.annualReturnBps)} per year`} />
             <Row label="Term" value={formatTerm(property.termMonths)} />
           </dl>
 
           <div className="mt-6 border-t border-hairline pt-6">
             {isOpen ? (
-              <InvestPanel property={property} walletBalanceFils={wallet?.balanceFils ?? '0'} />
+              <InvestPanel property={property} walletBalanceCents={wallet?.balanceCents ?? '0'} />
             ) : (
               <div className="rounded-lg bg-gold-100 px-4 py-3.5 text-center">
                 <p className="text-[0.8125rem] font-medium text-brand-900">

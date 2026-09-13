@@ -93,8 +93,8 @@ export type ReferralValidation =
   | { valid: true; referrerFirstName: string }
   | { valid: false };
 
-/** Money always arrives as a string of fils — never a JSON number. */
-export type Fils = string;
+/** Money always arrives as a string of cents — never a JSON number. */
+export type Cents = string;
 
 export type PropertyStatus = 'DRAFT' | 'OPEN' | 'FUNDED' | 'CLOSED';
 export type InvestmentStatus = 'ACTIVE' | 'MATURED' | 'CANCELLED';
@@ -110,15 +110,15 @@ export interface Property {
   city: string;
   country: string;
   images: string[];
-  totalValueFils: Fils;
-  minInvestmentFils: Fils;
-  fundedFils: Fils;
-  remainingFils: Fils;
+  totalValueCents: Cents;
+  minInvestmentCents: Cents;
+  fundedCents: Cents;
+  remainingCents: Cents;
   fundedProgress: number;
   annualReturnBps: number;
   termMonths: number;
   status: PropertyStatus;
-  projectedReturnOnMinimumFils: Fils;
+  projectedReturnOnMinimumCents: Cents;
   fundingClosesAt: string | null;
 }
 

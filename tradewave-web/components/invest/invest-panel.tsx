@@ -8,29 +8,29 @@ import { Button } from '@/components/ui/button';
 import { ApiError, apiFetch, errorMessage } from '@/lib/api';
 import type { Property } from '@/lib/types';
 import {
-  filsToNumber,
-  formatAed,
-  formatAedCompact,
+  centsToNumber,
+  formatUsd,
+  formatUsdCompact,
   formatBps,
   formatTerm,
-  parseDirhamInput,
-  projectedReturnFils,
+  parseDollarInput,
+  projectedReturnCents,
 } from '@/lib/money';
 
 /**
  * The invest panel — the core interaction of the product.
  *
  * Every figure shown here is recomputed by the server on submit; this exists so
- * the numbers move as the user types. `projectedReturnFils` deliberately mirrors
+ * the numbers move as the user types. `projectedReturnCents` deliberately mirrors
  * the server rule rather than inventing its own, so the amount quoted before
  * investing is the amount that actually accrues afterwards.
  */
 export function InvestPanel({
   property,
-  walletBalanceFils = '0',
+  walletBalanceCents = '0',
 }: {
   property: Property;
-  walletBalanceFils?: string;
+  walletBalanceCents?: string;
 }) {
   const router = useRouter();
   const [raw, setRaw] = useState('');
@@ -39,56 +39,56 @@ export function InvestPanel({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const minFils = filsToNumber(property.minInvestmentFils);
-  const remainingFils = filsToNumber(property.remainingFils);
-  const totalFils = filsToNumber(property.totalValueFils);
-  const balanceFils = filsToNumber(walletBalanceFils);
+  const minCents = centsToNumber(property.minInvestmentCents);
+  const remainingCents = centsToNumber(property.remainingCents);
+  const totalCents = centsToNumber(property.totalValueCents);
+  const balanceCents = centsToNumber(walletBalanceCents);
 
-  const amountFils = parseDirhamInput(raw);
+  const amountCents = parseDollarInput(raw);
 
   const calc = useMemo(() => {
-    if (amountFils === null || amountFils <= 0) return null;
-    const profit = projectedReturnFils(amountFils, property.annualReturnBps, property.termMonths);
+    if (amountCents === null || amountCents <= 0) return null;
+    const profit = projectedReturnCents(amountCents, property.annualReturnBps, property.termMonths);
     return {
       profit,
-      atMaturity: amountFils + profit,
-      stakePercent: totalFils === 0 ? 0 : (amountFils / totalFils) * 100,
+      atMaturity: amountCents + profit,
+      stakePercent: totalCents === 0 ? 0 : (amountCents / totalCents) * 100,
     };
-  }, [amountFils, property.annualReturnBps, property.termMonths, totalFils]);
+  }, [amountCents, property.annualReturnBps, property.termMonths, totalCents]);
 
   // Ordered by which the user should fix first — an amount below the minimum is
   // a more useful message than "insufficient balance" on the same input.
   const error =
-    amountFils === null
+    amountCents === null
       ? raw.trim() === ''
         ? null
         : 'Enter a valid amount'
-      : amountFils < minFils
-        ? `Minimum investment is ${formatAed(minFils)}`
-        : amountFils > remainingFils
-          ? `Only ${formatAedCompact(property.remainingFils)} remains in this property`
+      : amountCents < minCents
+        ? `Minimum investment is ${formatUsd(minCents)}`
+        : amountCents > remainingCents
+          ? `Only ${formatUsdCompact(property.remainingCents)} remains in this property`
           : null;
 
-  const underfunded = amountFils !== null && !error && amountFils > balanceFils;
+  const underfunded = amountCents !== null && !error && amountCents > balanceCents;
   // Reviewing is not committing. A user should be able to read the full terms
   // before deciding to deposit money, so the funding gate sits on the final
   // confirm, not on getting to it.
-  const canReview = amountFils !== null && !error;
+  const canReview = amountCents !== null && !error;
 
-  const quickAmounts = [minFils, minFils * 5, minFils * 10, minFils * 25].filter(
-    (v, i, arr) => v <= remainingFils && arr.indexOf(v) === i,
+  const quickAmounts = [minCents, minCents * 5, minCents * 10, minCents * 25].filter(
+    (v, i, arr) => v <= remainingCents && arr.indexOf(v) === i,
   );
 
   async function confirm() {
-    if (amountFils === null) return;
+    if (amountCents === null) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
       await apiFetch('/investments', {
         method: 'POST',
-        // Money goes over the wire as a STRING of fils — a JSON number would
+        // Money goes over the wire as a STRING of cents — a JSON number would
         // invite a float round-trip on a value that must stay exact.
-        body: { propertyId: property.id, amountFils: String(amountFils) },
+        body: { propertyId: property.id, amountCents: String(amountCents) },
       });
       setStep('done');
       // The property's funding progress and the wallet balance both changed,
@@ -112,7 +112,7 @@ export function InvestPanel({
     }
   }
 
-  if (step === 'done' && amountFils !== null && calc) {
+  if (step === 'done' && amountCents !== null && calc) {
     return (
       <div className="text-center">
         <div className="mx-auto flex size-11 items-center justify-center rounded-full bg-gain/10">
@@ -130,7 +130,7 @@ export function InvestPanel({
     );
   }
 
-  if (step === 'review' && calc && amountFils !== null) {
+  if (step === 'review' && calc && amountCents !== null) {
     return (
       <div>
         <button
@@ -146,12 +146,12 @@ export function InvestPanel({
 
         <dl className="mt-4 space-y-2.5 border-y border-hairline py-4 text-[0.8125rem]">
           <Row label="Property" value={property.title} />
-          <Row label="You invest" value={formatAed(amountFils)} strong />
+          <Row label="You invest" value={formatUsd(amountCents)} strong />
           <Row label="Your stake" value={`${calc.stakePercent.toFixed(3)}%`} />
           <Row label="Declared return" value={`${formatBps(property.annualReturnBps)} per year`} />
           <Row label="Term" value={formatTerm(property.termMonths)} />
-          <Row label="Profit at maturity" value={`+${formatAed(calc.profit)}`} tone="gain" />
-          <Row label="Total at maturity" value={formatAed(calc.atMaturity)} strong />
+          <Row label="Profit at maturity" value={`+${formatUsd(calc.profit)}`} tone="gain" />
+          <Row label="Total at maturity" value={formatUsd(calc.atMaturity)} strong />
         </dl>
 
         <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-[0.75rem] leading-relaxed text-muted-foreground">
@@ -174,7 +174,7 @@ export function InvestPanel({
           >
             <AlertCircle className="mt-px size-4 shrink-0" />
             <span>
-              Your wallet is short by {formatAed(amountFils - balanceFils)}.{' '}
+              Your wallet is short by {formatUsd(amountCents - balanceCents)}.{' '}
               <Link href="/wallet" className="font-medium underline underline-offset-4">
                 Fund your wallet
               </Link>{' '}
@@ -216,7 +216,7 @@ export function InvestPanel({
       </label>
       <div className="relative mt-1.5">
         <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-[0.875rem] font-medium text-muted-foreground">
-          AED
+          USD
         </span>
         <input
           id="invest-amount"
@@ -237,8 +237,8 @@ export function InvestPanel({
         </p>
       ) : (
         <p id="invest-limits" className="mt-1.5 text-[0.75rem] text-muted-foreground">
-          Minimum {formatAedCompact(property.minInvestmentFils)} &middot;{' '}
-          {formatAedCompact(property.remainingFils)} available
+          Minimum {formatUsdCompact(property.minInvestmentCents)} &middot;{' '}
+          {formatUsdCompact(property.remainingCents)} available
         </p>
       )}
 
@@ -250,7 +250,7 @@ export function InvestPanel({
             onClick={() => setRaw(String(v / 100))}
             className="rounded-full border border-hairline px-3 py-1 text-[0.75rem] font-medium text-foreground transition-colors hover:border-brand-400 hover:bg-brand-50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
           >
-            {formatAedCompact(v)}
+            {formatUsdCompact(v)}
           </button>
         ))}
       </div>
@@ -262,8 +262,8 @@ export function InvestPanel({
             label="Return"
             value={`${formatBps(property.annualReturnBps)}/yr · ${formatTerm(property.termMonths)}`}
           />
-          <Row label="Profit at maturity" value={`+${formatAed(calc.profit)}`} tone="gain" />
-          <Row label="Total at maturity" value={formatAed(calc.atMaturity)} strong />
+          <Row label="Profit at maturity" value={`+${formatUsd(calc.profit)}`} tone="gain" />
+          <Row label="Total at maturity" value={formatUsd(calc.atMaturity)} strong />
         </dl>
       ) : null}
 
@@ -273,7 +273,7 @@ export function InvestPanel({
           Wallet
         </span>
         <span className="text-[0.8125rem] font-semibold tabular-nums text-foreground">
-          {formatAed(balanceFils)}
+          {formatUsd(balanceCents)}
         </span>
       </div>
 
@@ -284,7 +284,7 @@ export function InvestPanel({
         >
           <AlertCircle className="mt-px size-4 shrink-0" />
           <span>
-            You need {formatAed(amountFils - balanceFils)} more.{' '}
+            You need {formatUsd(amountCents - balanceCents)} more.{' '}
             <Link href="/wallet" className="font-medium underline underline-offset-4">
               Fund your wallet
             </Link>

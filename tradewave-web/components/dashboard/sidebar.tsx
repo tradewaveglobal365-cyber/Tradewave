@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { Plus } from 'lucide-react';
 import { TradewaveLogo } from '@/components/brand/logo';
 import { NAV_ITEMS, isActive } from '@/lib/nav';
-import { formatAed } from '@/lib/money';
+import { formatUsd } from '@/lib/money';
 import { cn } from '@/lib/utils';
 
 /**
@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
  * rather than a top nav: on an investment platform, knowing what you can spend
  * WHILE browsing properties is the point.
  */
-export function Sidebar({ balanceFils }: { balanceFils: string }) {
+export function Sidebar({ balanceCents }: { balanceCents: string }) {
   const pathname = usePathname();
 
   return (
@@ -62,7 +62,7 @@ export function Sidebar({ balanceFils }: { balanceFils: string }) {
             Wallet balance
           </p>
           <p className="mt-1 text-[1.25rem] leading-none font-semibold tabular-nums text-white">
-            {formatAed(balanceFils)}
+            {formatUsd(balanceCents)}
           </p>
           <Link
             href="/wallet"

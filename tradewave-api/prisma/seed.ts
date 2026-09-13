@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { dirhamToFils, PEGGED_FILS_PER_USD } from '../src/lib/money';
+import { dollarsToCents } from '../src/lib/money';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -12,7 +12,7 @@ import { dirhamToFils, PEGGED_FILS_PER_USD } from '../src/lib/money';
  * and re-running `npm run db:seed` is the entire process. No code changes.
  *
  * Rates are BASIS POINTS: 850 = 8.50% per annum.
- * Prices are dirham strings, converted to fils — never write a float here.
+ * Prices are dollar strings, converted to cents — never write a float here.
  *
  * The rates below sit in the 7–11% band, which is roughly where Dubai
  * fractional-property platforms actually advertise net yields. Anything much
@@ -42,8 +42,8 @@ const PROPERTIES = [
     addressLine: 'Mohammed Bin Rashid Blvd',
     area: 'Downtown Dubai',
     city: 'Dubai',
-    totalValue: '2850000',
-    minInvestment: '2000',
+    totalValue: '775000',
+    minInvestment: '500',
     annualReturnBps: 780,
     termMonths: 24,
     images: ['https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1200&q=80'],
@@ -59,8 +59,8 @@ const PROPERTIES = [
     addressLine: 'Frond K, Palm Jumeirah',
     area: 'Palm Jumeirah',
     city: 'Dubai',
-    totalValue: '18500000',
-    minInvestment: '10000',
+    totalValue: '5000000',
+    minInvestment: '2500',
     annualReturnBps: 690,
     termMonths: 36,
     images: ['https://images.unsplash.com/photo-1613977257363-707ba9348227?w=1200&q=80'],
@@ -76,8 +76,8 @@ const PROPERTIES = [
     addressLine: 'Al Marsa Street, Dubai Marina',
     area: 'Dubai Marina',
     city: 'Dubai',
-    totalValue: '1650000',
-    minInvestment: '1000',
+    totalValue: '450000',
+    minInvestment: '250',
     annualReturnBps: 920,
     termMonths: 18,
     images: ['https://images.unsplash.com/photo-1528702748617-c64d49f918af?w=1200&q=80'],
@@ -93,8 +93,8 @@ const PROPERTIES = [
     addressLine: 'Marasi Drive, Business Bay',
     area: 'Business Bay',
     city: 'Dubai',
-    totalValue: '7200000',
-    minInvestment: '5000',
+    totalValue: '1960000',
+    minInvestment: '1250',
     annualReturnBps: 1050,
     termMonths: 36,
     images: ['https://images.unsplash.com/photo-1526495124232-a04e1849168c?w=1200&q=80'],
@@ -110,8 +110,8 @@ const PROPERTIES = [
     addressLine: 'District 12, Jumeirah Village Circle',
     area: 'Jumeirah Village Circle',
     city: 'Dubai',
-    totalValue: '5400000',
-    minInvestment: '2500',
+    totalValue: '1470000',
+    minInvestment: '750',
     annualReturnBps: 880,
     termMonths: 24,
     images: ['https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200&q=80'],
@@ -127,8 +127,8 @@ const PROPERTIES = [
     addressLine: 'Creek Beach, Dubai Creek Harbour',
     area: 'Dubai Creek Harbour',
     city: 'Dubai',
-    totalValue: '2100000',
-    minInvestment: '1500',
+    totalValue: '570000',
+    minInvestment: '400',
     annualReturnBps: 740,
     termMonths: 30,
     images: ['https://images.unsplash.com/photo-1582407947304-fd86f028f716?w=1200&q=80'],
@@ -148,14 +148,14 @@ async function main() {
       area: p.area,
       city: p.city,
       images: [...p.images],
-      totalValueFils: dirhamToFils(p.totalValue),
-      minInvestmentFils: dirhamToFils(p.minInvestment),
+      totalValueCents: dollarsToCents(p.totalValue),
+      minInvestmentCents: dollarsToCents(p.minInvestment),
       annualReturnBps: p.annualReturnBps,
       termMonths: p.termMonths,
       status: 'OPEN' as const,
     };
 
-    // Upsert on slug so re-seeding updates content without wiping fundedFils
+    // Upsert on slug so re-seeding updates content without wiping fundedCents
     // or orphaning existing investments.
     await prisma.property.upsert({
       where: { slug: p.slug },
@@ -165,18 +165,21 @@ async function main() {
     console.log(`  property  ${p.slug}`);
   }
 
-  // The dirham is pegged to the dollar at 3.6725 and has been since 1997, so
-  // the USD figure is an exact conversion, not an estimate. Still recorded in
-  // the rate table rather than hardcoded, in case the peg ever moves.
-  const latestFx = await prisma.fxRate.findFirst({
-    where: { baseCurrency: 'AED', quoteCurrency: 'USD' },
+  // No USD/NGN rate is seeded, deliberately.
+  //
+  // It is an operational setting, not seed data: naira floats, and a rate
+  // committed to a file is stale the day after it is written. Seeding one would
+  // mean a deposit could be credited at a number nobody chose. The deposit path
+  // fails closed instead — no current rate, no quote and no credit — and an
+  // admin sets the live rate through the API.
+  //
+  // For local work, `npm run db:seed:demo` writes a placeholder rate.
+  const fx = await prisma.fxRate.findFirst({
+    where: { baseCurrency: 'USD', quoteCurrency: 'NGN' },
     orderBy: { effectiveAt: 'desc' },
   });
-  if (!latestFx || latestFx.filsPerUnit !== PEGGED_FILS_PER_USD) {
-    await prisma.fxRate.create({
-      data: { baseCurrency: 'AED', quoteCurrency: 'USD', filsPerUnit: PEGGED_FILS_PER_USD },
-    });
-    console.log('  fx rate   AED/USD @ 3.6725 (pegged)');
+  if (!fx) {
+    console.log('\n  ⚠  No USD/NGN rate set. Deposits stay closed until an admin sets one.');
   }
 
   console.log(`\nSeeded ${PROPERTIES.length} properties.`);

@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { MapPin } from 'lucide-react';
 import type { Property } from '@/lib/types';
-import { formatBps, formatAedCompact, formatTerm } from '@/lib/money';
+import { formatBps, formatUsdCompact, formatTerm } from '@/lib/money';
 import { FundingBar } from './funding-bar';
 
 export function PropertyCard({ property }: { property: Property }) {
@@ -43,7 +43,7 @@ export function PropertyCard({ property }: { property: Property }) {
           <div>
             <p className="text-[0.6875rem] text-muted-foreground">Property value</p>
             <p className="text-[1.0625rem] font-semibold text-foreground">
-              {formatAedCompact(property.totalValueFils)}
+              {formatUsdCompact(property.totalValueCents)}
             </p>
           </div>
           <div className="text-right">
@@ -63,7 +63,7 @@ export function PropertyCard({ property }: { property: Property }) {
           <p className="mt-2.5 text-[0.75rem] text-muted-foreground">
             From{' '}
             <span className="font-medium text-foreground">
-              {formatAedCompact(property.minInvestmentFils)}
+              {formatUsdCompact(property.minInvestmentCents)}
             </span>{' '}
             &middot; {formatTerm(property.termMonths)} term
           </p>

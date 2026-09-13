@@ -14,17 +14,17 @@ export interface PublicProperty {
   city: string;
   country: string;
   images: string[];
-  totalValueFils: bigint;
-  minInvestmentFils: bigint;
-  fundedFils: bigint;
-  remainingFils: bigint;
+  totalValueCents: bigint;
+  minInvestmentCents: bigint;
+  fundedCents: bigint;
+  remainingCents: bigint;
   /** 0..1 — how much of the property has been taken up. */
   fundedProgress: number;
   annualReturnBps: number;
   termMonths: number;
   status: Property['status'];
-  /** Total return on a principal over the whole term, in fils. */
-  projectedReturnOnMinimumFils: bigint;
+  /** Total return on a principal over the whole term, in cents. */
+  projectedReturnOnMinimumCents: bigint;
   fundingClosesAt: Date | null;
 }
 
@@ -33,16 +33,16 @@ export interface PublicProperty {
  * rule as accrual.ts. Kept here rather than duplicated in the UI so the number a
  * user is quoted before investing matches what they actually accrue after.
  */
-export function projectedReturnFils(
-  principalFils: bigint,
+export function projectedReturnCents(
+  principalCents: bigint,
   annualReturnBps: number,
   termMonths: number,
 ): bigint {
-  return (principalFils * BigInt(annualReturnBps) * BigInt(termMonths)) / (BPS_DENOMINATOR * 12n);
+  return (principalCents * BigInt(annualReturnBps) * BigInt(termMonths)) / (BPS_DENOMINATOR * 12n);
 }
 
 export function toPublicProperty(p: Property): PublicProperty {
-  const remainingFils = p.totalValueFils - p.fundedFils;
+  const remainingCents = p.totalValueCents - p.fundedCents;
   return {
     id: p.id,
     slug: p.slug,
@@ -54,17 +54,17 @@ export function toPublicProperty(p: Property): PublicProperty {
     city: p.city,
     country: p.country,
     images: p.images,
-    totalValueFils: p.totalValueFils,
-    minInvestmentFils: p.minInvestmentFils,
-    fundedFils: p.fundedFils,
-    remainingFils: remainingFils > 0n ? remainingFils : 0n,
+    totalValueCents: p.totalValueCents,
+    minInvestmentCents: p.minInvestmentCents,
+    fundedCents: p.fundedCents,
+    remainingCents: remainingCents > 0n ? remainingCents : 0n,
     fundedProgress:
-      p.totalValueFils === 0n ? 0 : Math.min(1, Number(p.fundedFils) / Number(p.totalValueFils)),
+      p.totalValueCents === 0n ? 0 : Math.min(1, Number(p.fundedCents) / Number(p.totalValueCents)),
     annualReturnBps: p.annualReturnBps,
     termMonths: p.termMonths,
     status: p.status,
-    projectedReturnOnMinimumFils: projectedReturnFils(
-      p.minInvestmentFils,
+    projectedReturnOnMinimumCents: projectedReturnCents(
+      p.minInvestmentCents,
       p.annualReturnBps,
       p.termMonths,
     ),

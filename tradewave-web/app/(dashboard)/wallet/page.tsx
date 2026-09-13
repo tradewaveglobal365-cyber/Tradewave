@@ -3,13 +3,13 @@ import { Plus, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader } from '@/components/dashboard/page-header';
 import { getWallet } from '@/lib/wallet';
-import { formatAed, formatUsd, PEGGED_FILS_PER_USD } from '@/lib/money';
+import { formatAed, formatUsd } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'Wallet · Tradewave' };
 
 export default async function WalletPage() {
   const wallet = await getWallet();
-  const balanceFils = wallet?.balanceFils ?? '0';
+  const balanceCents = wallet?.balanceCents ?? '0';
 
   return (
     <div>
@@ -23,13 +23,14 @@ export default async function WalletPage() {
         <div className="mt-1.5 flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-[2rem] leading-none font-semibold tracking-[-0.02em] tabular-nums text-foreground">
-              {formatAed(balanceFils)}
+              {formatUsd(balanceCents)}
             </p>
-            {/* AED is pegged to USD at 3.6725, so this is exact rather than
-                indicative — but it is still labelled, because a bare dollar
-                figure reads as a promise to redeem in dollars. */}
+            {/* The balance is held in dollars; the dirham figure is what the
+                same money buys in Dubai. Exact rather than indicative, because
+                the dirham is pegged at 3.6725 — but still labelled, so it does
+                not read as a second balance. */}
             <p className="mt-1.5 text-[0.8125rem] text-muted-foreground">
-              {formatUsd(balanceFils, PEGGED_FILS_PER_USD)} at the AED/USD peg
+              {formatAed(balanceCents)} at the AED/USD peg
             </p>
           </div>
           <Button disabled className="h-11 gap-1.5 md:h-10">

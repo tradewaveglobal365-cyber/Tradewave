@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import { dirhamToFils } from '../src/lib/money';
+import { dollarsToCents } from '../src/lib/money';
 import { addMonths } from '../src/modules/investment/accrual';
 
 /**
@@ -35,8 +35,8 @@ async function main() {
 
   const wallet = await prisma.wallet.upsert({
     where: { userId: user.id },
-    update: { balanceFils: dirhamToFils('25000') },
-    create: { userId: user.id, balanceFils: dirhamToFils('25000') },
+    update: { balanceCents: dollarsToCents('25000') },
+    create: { userId: user.id, balanceCents: dollarsToCents('25000') },
   });
 
   await prisma.ledgerEntry.deleteMany({ where: { walletId: wallet.id } });
@@ -44,8 +44,8 @@ async function main() {
     data: {
       walletId: wallet.id,
       type: 'DEPOSIT',
-      amountFils: dirhamToFils('25000'),
-      balanceAfterFils: dirhamToFils('25000'),
+      amountCents: dollarsToCents('25000'),
+      balanceAfterCents: dollarsToCents('25000'),
       reference: `demo-deposit-${user.id}`,
       description: 'Demo funding',
     },
@@ -66,14 +66,14 @@ async function main() {
     }
 
     const investedAt = monthsAgo(pick.startedMonthsAgo);
-    const principalFils = dirhamToFils(pick.amount);
+    const principalCents = dollarsToCents(pick.amount);
 
     await prisma.$transaction([
       prisma.investment.create({
         data: {
           userId: user.id,
           propertyId: property.id,
-          principalFils,
+          principalCents,
           // Snapshot, exactly as the real invest transaction will do.
           annualReturnBps: property.annualReturnBps,
           termMonths: property.termMonths,
@@ -83,7 +83,7 @@ async function main() {
       }),
       prisma.property.update({
         where: { id: property.id },
-        data: { fundedFils: { increment: principalFils } },
+        data: { fundedCents: { increment: principalCents } },
       }),
     ]);
 
