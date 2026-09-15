@@ -82,3 +82,22 @@ export const submitKycSchema = z.object({
 });
 
 export type SubmitKycValues = z.input<typeof submitKycSchema>;
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * CONTRACT MIRROR of tradewave-api/src/modules/fx/fx.routes.ts
+ *
+ * Note the deliberate mismatch: the API takes KOBO per dollar as an integer
+ * (₦1,650.00 is 165000), but this form takes NAIRA, because asking a person to
+ * type the kobo figure is asking for a hundredfold error in somebody's balance.
+ * The conversion happens in fx-rate-form.tsx, right before submit.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+export const setFxRateSchema = z.object({
+  nairaPerDollar: z
+    .string()
+    .min(1, 'Enter the rate')
+    .regex(/^\d{1,7}(\.\d{1,2})?$/, 'Naira per dollar, e.g. 1650 or 1650.50'),
+});
+
+export type SetFxRateValues = z.input<typeof setFxRateSchema>;

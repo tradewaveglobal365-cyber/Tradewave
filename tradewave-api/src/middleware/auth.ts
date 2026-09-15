@@ -111,10 +111,34 @@ export async function requireKyc(
   }
 }
 
+/**
+ * Requires one of the given roles.
+ *
+ * Reads the database rather than req.auth, for the same reason requireKyc does —
+ * and more urgently. The access token carries the role it was issued with and
+ * lives for 15 minutes (ACCESS_TOKEN_TTL_SECONDS), so trusting it would leave a
+ * demoted admin holding admin for up to another quarter of an hour. That is the
+ * window in which someone is removed for cause, or an account is believed
+ * compromised, and revoking has to mean revoked now.
+ *
+ * Note the asymmetry with requireKyc: there, a stale token wrongly BLOCKS a user
+ * who just passed. Here it wrongly GRANTS power to someone who just lost it. Both
+ * arguments land on reading the database; only one of them is about privilege.
+ *
+ * This guards low-traffic admin routes, so the extra indexed SELECT is free next
+ * to being correct.
+ */
 export function requireRole(...roles: Role[]) {
-  return (req: Request, _res: Response, next: NextFunction): void => {
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     if (!req.auth) return next(unauthorized());
-    if (!roles.includes(req.auth.role)) return next(forbidden());
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.auth.userId },
+      select: { role: true },
+    });
+    if (!user) return next(unauthorized());
+    if (!roles.includes(user.role)) return next(forbidden());
+
     next();
   };
 }

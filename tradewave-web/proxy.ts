@@ -14,6 +14,7 @@ const PROTECTED_PREFIXES = [
   '/documents',
   '/settings',
   '/verify-identity',
+  '/admin',
 ];
 const AUTH_PAGES = ['/login', '/signup', '/forgot-password'];
 

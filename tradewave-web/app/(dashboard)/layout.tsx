@@ -13,8 +13,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const [user, wallet] = await Promise.all([getCurrentUser(), getWallet()]);
   if (!user) redirect('/login?next=/dashboard');
 
-  // GET /wallet does not exist yet; fall back to zero rather than hiding the
-  // panel, so the layout is already correct when the endpoint lands.
+  // Staff accounts do not hold investments. Bouncing them here rather than
+  // hiding links means there is one rule in one place, and no investor page has
+  // to remember to check.
+  if (user.role === 'ADMIN') redirect('/admin');
+
+  // A null wallet means the API was unreachable, not that the balance is zero —
+  // fall back to zero rather than hiding the panel, so the layout still renders.
   const balanceCents = wallet?.balanceCents ?? '0';
 
   return (

@@ -54,6 +54,26 @@ services:
       - key: DIDIT_WEBHOOK_SECRET
         sync: false
 
+      # Deposits (Klasha). All four or none — env.ts refuses a half-configured
+      # provider, because we would hand a user an account number and then be
+      # unable to confirm what lands in it. Leave unset to keep the stub driver,
+      # which issues nothing in production.
+      #   Sandbox https://dev.kcookery.com — live https://gate.klasapps.com/pay
+      - key: KLASHA_BASE_URL
+        sync: false
+      - key: KLASHA_PUBLIC_KEY
+        sync: false
+      # Exactly 24 bytes. Several Klasha endpoints take a 3DES-encrypted body.
+      - key: KLASHA_ENCRYPTION_KEY
+        sync: false
+      # ⚠️ Klasha mints its bearer token from ACCOUNT credentials rather than a
+      # machine credential, so these are dashboard login details living in
+      # deployment config. Ask them for a scoped API credential.
+      - key: KLASHA_ACCOUNT_EMAIL
+        sync: false
+      - key: KLASHA_ACCOUNT_PASSWORD
+        sync: false
+
       # Peppers the hash of government ID numbers. An 11-digit NIN has too little
       # entropy to survive an unkeyed digest, so this is what stands between a
       # database dump and every user's ID number.
