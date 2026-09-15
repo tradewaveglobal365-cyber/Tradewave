@@ -13,6 +13,23 @@ import type { NextConfig } from "next";
 const API_ORIGIN = process.env.API_ORIGIN;
 
 const nextConfig: NextConfig = {
+  /**
+   * How long a visited route stays in the client router cache.
+   *
+   * Every page in the dashboard and admin is dynamic and fetches from the API
+   * on the server, which on Render's free tier costs about a second even for a
+   * response that does no work. The default for dynamic segments is 0, so
+   * clicking back to a tab you left ten seconds ago pays that again.
+   *
+   * 30s makes moving between tabs instant on the way back. Mutations are not
+   * affected: publishing a listing, releasing a deposit and setting a rate all
+   * call router.refresh(), which invalidates this. The residual staleness is
+   * another admin's change not appearing for half a minute — acceptable, and a
+   * reload always shows the truth.
+   */
+  experimental: {
+    staleTimes: { dynamic: 30, static: 180 },
+  },
   images: {
     // Marketing photography is remote placeholder content until the client
     // supplies real property shots. The same host serves the seeded property
