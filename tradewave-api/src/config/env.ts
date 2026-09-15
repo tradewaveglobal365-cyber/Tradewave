@@ -53,6 +53,19 @@ const envSchema = z.object({
   KLASHA_ACCOUNT_EMAIL: z.string().default(''),
   KLASHA_ACCOUNT_PASSWORD: z.string().default(''),
 
+  // Supabase Storage — listing photographs. Both together or neither; without
+  // them the upload route answers 503 and an admin can still manage everything
+  // else about a property.
+  //
+  // ⚠️ SUPABASE_SERVICE_ROLE_KEY bypasses row-level security and can read and
+  // write the whole database. It is the standard credential for server-side
+  // storage writes and it never leaves this process — but it belongs in the same
+  // mental bucket as the Klasha password: deployment config only, never a
+  // browser, never committed.
+  SUPABASE_URL: z.string().default(''),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().default(''),
+  SUPABASE_PROPERTY_BUCKET: z.string().default('property-images'),
+
   WEB_ORIGIN: z.string().url(),
   // Empty in development; ".tradewave.com" in production so the cookie is
   // shared between tradewave.com and api.tradewave.com.
@@ -94,6 +107,16 @@ const parsed = envSchema
         code: 'custom',
         path: ['KLASHA_ENCRYPTION_KEY'],
         message: `KLASHA_ENCRYPTION_KEY must be exactly 24 bytes for 3DES, got ${Buffer.byteLength(cfg.KLASHA_ENCRYPTION_KEY)}`,
+      });
+    }
+
+    const supabase = [cfg.SUPABASE_URL, cfg.SUPABASE_SERVICE_ROLE_KEY];
+    if (supabase.some(Boolean) && !supabase.every(Boolean)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SUPABASE_URL'],
+        message:
+          'SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set together, or both left empty',
       });
     }
 

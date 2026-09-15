@@ -46,3 +46,38 @@ export async function getAdminDeposits(): Promise<AdminDeposit[]> {
   const body = await authedGet<{ deposits: AdminDeposit[] }>('/admin/deposits');
   return body?.deposits ?? [];
 }
+
+export interface AdminProperty {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  description: string;
+  addressLine: string;
+  area: string;
+  city: string;
+  country: string;
+  images: string[];
+  totalValueCents: string;
+  minInvestmentCents: string;
+  fundedCents: string;
+  remainingCents: string;
+  fundedProgress: number;
+  annualReturnBps: number;
+  termMonths: number;
+  status: 'DRAFT' | 'OPEN' | 'FUNDED' | 'CLOSED';
+  fundingClosesAt: string | null;
+  investorCount: number;
+  /** False once anyone has invested — the form disables the money fields on it. */
+  moneyEditable: boolean;
+}
+
+export async function getAdminProperties(): Promise<AdminProperty[]> {
+  const body = await authedGet<{ properties: AdminProperty[] }>('/admin/properties');
+  return body?.properties ?? [];
+}
+
+export async function getAdminProperty(id: string): Promise<AdminProperty | null> {
+  const body = await authedGet<{ property: AdminProperty }>(`/admin/properties/${id}`);
+  return body?.property ?? null;
+}

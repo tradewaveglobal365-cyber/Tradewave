@@ -103,3 +103,12 @@ export const belowMinimumInvestment = (minimum: string) =>
 export const depositsUnavailable = (
   message = 'Funding is temporarily unavailable. Please try again shortly.',
 ) => new AppError(503, 'DEPOSITS_UNAVAILABLE', message);
+
+/**
+ * A feature whose provider has not been configured yet. Same 503 reasoning as
+ * above, with its own code so a client can tell an unconfigured image store from
+ * an unconfigured payment provider — they are fixed in different places.
+ */
+export const storageUnavailable = (
+  message = 'Image storage is not configured yet.',
+) => new AppError(503, 'STORAGE_UNAVAILABLE', message);

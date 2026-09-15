@@ -74,6 +74,19 @@ services:
       - key: KLASHA_ACCOUNT_PASSWORD
         sync: false
 
+      # Listing photographs (Supabase Storage). Both or neither — without them
+      # the admin can manage everything about a property except uploading a
+      # photograph, which answers 503. The bucket must be PUBLIC-READ.
+      #
+      # ⚠️ The service-role key bypasses row-level security and can read and
+      # write the whole database. Same handling as the Klasha password.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_PROPERTY_BUCKET
+        value: property-images
+
       # Peppers the hash of government ID numbers. An 11-digit NIN has too little
       # entropy to survive an unkeyed digest, so this is what stands between a
       # database dump and every user's ID number.

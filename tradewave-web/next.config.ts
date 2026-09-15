@@ -17,7 +17,13 @@ const nextConfig: NextConfig = {
     // Marketing photography is remote placeholder content until the client
     // supplies real property shots. The same host serves the seeded property
     // images in tradewave-api/prisma/seed.ts.
-    remotePatterns: [{ protocol: 'https', hostname: 'images.unsplash.com' }],
+    remotePatterns: [
+      { protocol: 'https', hostname: 'images.unsplash.com' },
+      // Listing photographs uploaded through the admin live in Supabase
+      // Storage. The dashboard card uses a plain <img> and needs nothing, but
+      // the marketing card uses next/image and would refuse to render them.
+      { protocol: 'https', hostname: '*.supabase.co' },
+    ],
   },
   async rewrites() {
     if (!API_ORIGIN) return [];

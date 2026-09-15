@@ -101,3 +101,48 @@ export const setFxRateSchema = z.object({
 });
 
 export type SetFxRateValues = z.input<typeof setFxRateSchema>;
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * CONTRACT MIRROR of tradewave-api/src/modules/admin/schemas.ts
+ *
+ * The same deliberate mismatch as the FX form: the API takes money as a string
+ * of CENTS, this form takes DOLLARS. "2500000" and "250000" look alike at a
+ * glance and one of them is a listing ten times too cheap, so the conversion
+ * happens once, in property-form.tsx, right before submit — and the parsed
+ * figure is echoed back first.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+const dollarField = (label: string) =>
+  z
+    .string()
+    .min(1, `${label} is required`)
+    .regex(/^[\d,]+(\.\d{1,2})?$/, `${label} must be an amount, e.g. 450000`);
+
+export const propertyFormSchema = z.object({
+  slug: z
+    .string()
+    .trim()
+    .min(3, 'At least 3 characters')
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Lowercase letters, numbers and hyphens only'),
+  title: z.string().trim().min(1, 'Title is required').max(120, 'At most 120 characters'),
+  summary: z.string().trim().min(1, 'Summary is required').max(200, 'At most 200 characters'),
+  description: z.string().trim().min(1, 'Description is required').max(4000),
+  addressLine: z.string().trim().min(1, 'Address is required').max(200),
+  area: z.string().trim().min(1, 'Area is required').max(100),
+  city: z.string().trim().min(1, 'City is required').max(100),
+  country: z.string().trim().length(2, 'Two-letter code, e.g. AE'),
+  totalValue: dollarField('Property value'),
+  minInvestment: dollarField('Minimum investment'),
+  /** Percent as typed — 9.2 becomes 920 basis points on submit. */
+  annualReturnPercent: z
+    .string()
+    .min(1, 'Return is required')
+    .regex(/^\d{1,3}(\.\d{1,2})?$/, 'A percentage, e.g. 9.2'),
+  termMonths: z
+    .string()
+    .min(1, 'Term is required')
+    .regex(/^\d{1,3}$/, 'Whole months, e.g. 24'),
+});
+
+export type PropertyFormValues = z.input<typeof propertyFormSchema>;
