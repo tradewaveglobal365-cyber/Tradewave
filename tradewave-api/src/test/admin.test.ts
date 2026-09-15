@@ -103,11 +103,17 @@ describe('admin authorisation', () => {
     // people no sign-out is needed. This agent's access token was minted while
     // they were an ordinary USER and still says so.
     const { agent, userId } = await createUser('promote@example.com');
-    await agent.get('/api/v1/admin/deposits').expect(403);
+
+    // Asserted through the body rather than .expect(status): a bare status
+    // mismatch here tells you nothing about WHY, and this pair of calls has
+    // produced an unexplained 400 under full-suite runs.
+    const before = await agent.get('/api/v1/admin/deposits');
+    expect(before.status, JSON.stringify(before.body)).toBe(403);
 
     await prisma.user.update({ where: { id: userId }, data: { role: 'ADMIN' } });
 
-    await agent.get('/api/v1/admin/deposits').expect(200);
+    const after = await agent.get('/api/v1/admin/deposits');
+    expect(after.status, JSON.stringify(after.body)).toBe(200);
   });
 
   it('gates the FX rate write but not the read', async () => {
