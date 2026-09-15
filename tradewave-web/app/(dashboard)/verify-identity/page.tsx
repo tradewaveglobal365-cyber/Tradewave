@@ -23,7 +23,7 @@ export default async function VerifyIdentityPage() {
     <div>
       <PageHeader
         title="Verify your identity"
-        description="Required before you can invest. Photograph an ID, take a selfie \u2014 about a minute."
+        description="Required before you can invest. Photograph an ID, take a selfie — about a minute."
       />
 
       <div className="max-w-xl">
