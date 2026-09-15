@@ -17,7 +17,14 @@ import { apiFetch, errorMessage } from '@/lib/api';
  * Safe to press twice: the credit goes through the same path as the webhook,
  * where a unique constraint on the ledger entry makes a second credit impossible.
  */
-export function RetryDepositButton({ depositId }: { depositId: string }) {
+export function RetryDepositButton({
+  depositId,
+  full = false,
+}: {
+  depositId: string;
+  /** Full width with a larger tap target, for the mobile card layout. */
+  full?: boolean;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,18 +43,22 @@ export function RetryDepositButton({ depositId }: { depositId: string }) {
   }
 
   return (
-    <div className="text-right">
+    <div className={full ? '' : 'text-right'}>
       <Button
         type="button"
         onClick={retry}
         disabled={busy}
-        className="h-8 gap-1.5 px-2.5 text-[0.75rem]"
+        className={
+          full
+            ? 'h-10 w-full gap-1.5 text-[0.8125rem]'
+            : 'h-8 gap-1.5 px-2.5 text-[0.75rem]'
+        }
       >
-        <RotateCw className={busy ? 'size-3 animate-spin' : 'size-3'} />
-        {busy ? 'Releasing…' : 'Release'}
+        <RotateCw className={busy ? 'size-3.5 animate-spin' : 'size-3.5'} />
+        {busy ? 'Releasing…' : 'Release deposit'}
       </Button>
       {error ? (
-        <p role="alert" className="mt-1 text-[0.6875rem] text-destructive">
+        <p role="alert" className="mt-1.5 text-[0.6875rem] text-destructive">
           {error}
         </p>
       ) : null}

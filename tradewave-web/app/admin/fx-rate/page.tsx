@@ -18,9 +18,9 @@ export default async function FxRatePage() {
       <PageHeader title="FX rate" description={description} />
 
       {current ? (
-        <section className="rounded-xl border border-hairline bg-surface p-6">
+        <section className="rounded-xl border border-hairline bg-surface p-5 sm:p-6">
           <p className="text-[0.8125rem] font-medium text-muted-foreground">Current rate</p>
-          <p className="mt-1.5 text-[2rem] leading-none font-semibold tracking-[-0.02em] tabular-nums text-foreground">
+          <p className="mt-1.5 text-[1.75rem] leading-none font-semibold tracking-[-0.02em] tabular-nums text-foreground sm:text-[2rem]">
             {formatNgn(current)}
             <span className="ml-2 text-[1rem] font-normal text-muted-foreground">
               per $1.00
@@ -43,7 +43,7 @@ export default async function FxRatePage() {
         // Not a neutral empty state. With no rate, deposits are closed: a user
         // sees their account number but no quote, and anything they send is held
         // rather than credited. Say so.
-        <section className="rounded-xl border border-destructive/30 bg-destructive/5 p-6">
+        <section className="rounded-xl border border-destructive/30 bg-destructive/5 p-5 sm:p-6">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
             <div>
@@ -60,7 +60,7 @@ export default async function FxRatePage() {
         </section>
       )}
 
-      <section className="mt-6 rounded-xl border border-hairline bg-surface p-6">
+      <section className="mt-6 rounded-xl border border-hairline bg-surface p-5 sm:p-6">
         <h2 className="text-[1rem] font-semibold text-foreground">
           {current ? 'Update the rate' : 'Publish a rate'}
         </h2>
