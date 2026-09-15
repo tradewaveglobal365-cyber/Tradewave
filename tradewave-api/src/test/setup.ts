@@ -17,3 +17,16 @@ process.env.KYC_ID_PEPPER = 'test-pepper-that-is-long-enough-32-chars';
 process.env.DIDIT_API_KEY = '';
 process.env.DIDIT_WORKFLOW_ID = '';
 process.env.DIDIT_WEBHOOK_SECRET = '';
+
+// Every provider credential is pinned empty, not just the ones that existed when
+// this file was written. The schema validates several of these as all-or-nothing
+// groups, so a developer with a half-filled .env — one key pasted in while
+// setting up a deployment — would otherwise fail the whole suite at import time
+// with an error about environment configuration rather than anything they broke.
+process.env.KLASHA_PUBLIC_KEY = '';
+process.env.KLASHA_ENCRYPTION_KEY = '';
+process.env.KLASHA_ACCOUNT_EMAIL = '';
+process.env.KLASHA_ACCOUNT_PASSWORD = '';
+process.env.SUPABASE_URL = '';
+process.env.SUPABASE_SERVICE_ROLE_KEY = '';
+process.env.SUPABASE_PROPERTY_BUCKET = 'property-images';

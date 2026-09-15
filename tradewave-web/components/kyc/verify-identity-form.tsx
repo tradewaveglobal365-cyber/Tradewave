@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -32,6 +33,13 @@ export function VerifyIdentityForm({
 }) {
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Mirrors canEditName in tradewave-api/src/modules/auth/auth.service.ts. The
+  // API is the authority; this only decides whether to offer the link.
+  const nameEditable =
+    user.kycStatus === 'NOT_STARTED' ||
+    user.kycStatus === 'REJECTED' ||
+    user.kycStatus === 'EXPIRED';
 
   const {
     register,
@@ -76,8 +84,28 @@ export function VerifyIdentityForm({
         <p className="font-medium text-foreground">
           {user.firstName} {user.lastName}
         </p>
-        <p className="mt-1 text-[0.75rem] text-muted-foreground">
-          Your document must be in this name. Contact support if it is wrong.
+        {/* A name that does not match the document is the most common reason a
+            check fails, and it is something the user can fix themselves — so
+            send them to Settings rather than to support. The link is only
+            offered while the name is actually editable: once a document has
+            been verified against it, changing it would break the link between
+            the account and the identity that passed. */}
+        <p className="mt-1 text-[0.75rem] leading-relaxed text-muted-foreground">
+          Your document must be in this name.{' '}
+          {nameEditable ? (
+            <>
+              If it is wrong,{' '}
+              <Link
+                href="/settings"
+                className="font-medium text-brand-700 underline underline-offset-2"
+              >
+                update it in Settings
+              </Link>{' '}
+              before you continue.
+            </>
+          ) : (
+            'Contact support if it is wrong.'
+          )}
         </p>
       </div>
 

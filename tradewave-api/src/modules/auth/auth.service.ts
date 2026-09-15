@@ -1,4 +1,4 @@
-import { Prisma, type User } from '@prisma/client';
+import { Prisma, type KycStatus, type User } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { env } from '../../config/env';
 import { logger } from '../../lib/logger';
@@ -10,6 +10,7 @@ import {
   invalidCredentials,
   invalidToken,
   notFound,
+  validationFailed,
 } from '../../lib/errors';
 import { emailService } from '../../services/email';
 import { withMinimumDuration } from '../../lib/timing';
@@ -19,7 +20,7 @@ import {
   signAccessToken,
   type SessionContext,
 } from '../../services/token.service';
-import type { LoginInput, RegisterInput } from './schemas';
+import type { LoginInput, RegisterInput, UpdateProfileInput } from './schemas';
 
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCK_DURATION_MS = 15 * 60 * 1000;
@@ -364,3 +365,59 @@ export async function getUserById(userId: string): Promise<User> {
 }
 
 export { revokeAllSessions };
+
+/**
+ * Whether this user may still change the name on their account.
+ *
+ * The name is sent to the identity provider as expected_details so a mismatch
+ * against the document is flagged. Once a document has been checked against a
+ * name, letting that name change silently would break the link between the
+ * account and the identity that was actually verified — the account would read
+ * as one person while the passed check attests to another.
+ *
+ * So it is open exactly while no check stands behind it:
+ *   NOT_STARTED / REJECTED / EXPIRED  -> editable, which is the whole point:
+ *                                        a failed check is usually a name that
+ *                                        does not match the document
+ *   PENDING                           -> locked, a check is in flight on it
+ *   VERIFIED                          -> locked, a document attests to it
+ */
+export function canEditName(kycStatus: KycStatus): boolean {
+  return kycStatus === 'NOT_STARTED' || kycStatus === 'REJECTED' || kycStatus === 'EXPIRED';
+}
+
+export async function updateProfile(
+  userId: string,
+  input: UpdateProfileInput,
+): Promise<PublicUser> {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+
+  const changingName =
+    (input.firstName !== undefined && input.firstName !== user.firstName) ||
+    (input.lastName !== undefined && input.lastName !== user.lastName);
+
+  if (changingName && !canEditName(user.kycStatus)) {
+    // Rejected rather than ignored. A settings form that appears to save a new
+    // name and does not is worse than one that explains why it cannot.
+    throw validationFailed({
+      firstName:
+        user.kycStatus === 'PENDING'
+          ? 'Locked while your identity check is in progress.'
+          : 'Locked: your identity is verified against this name. Contact support to change it.',
+    });
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      ...(input.firstName !== undefined ? { firstName: input.firstName } : {}),
+      ...(input.lastName !== undefined ? { lastName: input.lastName } : {}),
+      // An empty string means "remove it", which is distinct from the field
+      // being absent, which means "leave it alone".
+      ...(input.phone !== undefined ? { phone: input.phone === '' ? null : input.phone } : {}),
+    },
+  });
+
+  logger.info({ userId, changedName: changingName }, 'Profile updated');
+  return toPublicUser(updated);
+}

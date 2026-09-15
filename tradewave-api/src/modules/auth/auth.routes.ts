@@ -14,6 +14,7 @@ import {
   registerSchema,
   resendVerificationSchema,
   resetPasswordSchema,
+  updateProfileSchema,
   verifyEmailQuerySchema,
 } from './schemas';
 
@@ -60,3 +61,17 @@ authRouter.post(
 );
 
 authRouter.get('/me', requireAuth, controller.me);
+
+/**
+ * Edit the profile. requireAuth only, not requireActive: someone who has not
+ * confirmed their email yet should still be able to correct a misspelt name.
+ *
+ * Whether the NAME specifically may change depends on identity-verification
+ * state — see auth.service.canEditName.
+ */
+authRouter.patch(
+  '/me',
+  requireAuth,
+  validateBody(updateProfileSchema),
+  controller.updateProfile,
+);

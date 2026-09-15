@@ -5,6 +5,7 @@ import { BadgeCheck, Banknote, ShieldCheck } from 'lucide-react';
 import { getCurrentUser } from '@/lib/session';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { SignOutAllButton } from '@/components/dashboard/sign-out-all-button';
+import { ProfileForm } from '@/components/settings/profile-form';
 
 export const metadata: Metadata = { title: 'Settings · Tradewave' };
 
@@ -17,13 +18,11 @@ export default async function SettingsPage() {
       <PageHeader title="Settings" description="Your profile, security and payout details." />
 
       <div className="space-y-5">
-        <Card title="Profile">
-          <dl className="space-y-3 text-[0.875rem]">
-            <Row label="Name" value={`${user.firstName} ${user.lastName}`} />
-            <Row label="Email" value={user.email} />
-            <Row label="Phone" value={user.phone ?? 'Not provided'} muted={!user.phone} />
-            <Row label="Country" value={user.country} />
-          </dl>
+        <Card
+          title="Profile"
+          description="Your name must match the document you verify with."
+        >
+          <ProfileForm user={user} />
         </Card>
 
         <Card
@@ -111,15 +110,6 @@ function Card({
       </div>
       {children}
     </section>
-  );
-}
-
-function Row({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className={muted ? 'text-muted-foreground' : 'font-medium text-foreground'}>{value}</dd>
-    </div>
   );
 }
 

@@ -16,6 +16,7 @@ import type {
   RegisterInput,
   ResendVerificationInput,
   ResetPasswordInput,
+  UpdateProfileInput,
 } from './schemas';
 
 function sessionContext(req: Request) {
@@ -101,4 +102,17 @@ export async function me(req: Request, res: Response): Promise<void> {
   if (!req.auth) throw unauthorized();
   const user = await authService.getUserById(req.auth.userId);
   res.json({ user: toPublicUser(user) });
+}
+
+/**
+ * Profile edits from the settings page.
+ *
+ * Returns the whole user rather than just what changed, so the client replaces
+ * its copy instead of merging — a partial merge is how a stale field survives
+ * an edit and reappears later.
+ */
+export async function updateProfile(req: Request, res: Response): Promise<void> {
+  if (!req.auth) throw unauthorized();
+  const input = req.body as UpdateProfileInput;
+  res.json({ user: await authService.updateProfile(req.auth.userId, input) });
 }

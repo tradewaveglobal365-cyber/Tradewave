@@ -146,3 +146,35 @@ export const propertyFormSchema = z.object({
 });
 
 export type PropertyFormValues = z.input<typeof propertyFormSchema>;
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * CONTRACT MIRROR of updateProfileSchema in
+ * tradewave-api/src/modules/auth/schemas.ts
+ *
+ * Whether the NAME may actually change depends on identity-verification state,
+ * which only the server knows. The form disables the inputs when it should, but
+ * the API is what enforces it.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+export const updateProfileSchema = z.object({
+  firstName: z
+    .string()
+    .trim()
+    .min(1, 'First name is required')
+    .max(50, 'First name is too long')
+    .regex(/^[\p{L}\p{M}'\- .]+$/u, 'First name contains invalid characters'),
+  lastName: z
+    .string()
+    .trim()
+    .min(1, 'Last name is required')
+    .max(50, 'Last name is too long')
+    .regex(/^[\p{L}\p{M}'\- .]+$/u, 'Last name contains invalid characters'),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^\+?[0-9\s\-()]{7,20}$/, 'Enter a valid phone number')
+    .or(z.literal('')),
+});
+
+export type UpdateProfileValues = z.input<typeof updateProfileSchema>;

@@ -86,3 +86,28 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
 export type VerifyEmailQuery = z.infer<typeof verifyEmailQuerySchema>;
+
+/**
+ * Profile edits.
+ *
+ * Every field optional — the settings form sends only what changed. Names reuse
+ * the register rules exactly; a name that was acceptable at signup must not
+ * become unacceptable at edit.
+ *
+ * Whether the NAME may change at all is a service decision, not a schema one:
+ * it depends on identity-verification state, which a schema cannot see. See
+ * auth.service.updateProfile.
+ */
+export const updateProfileSchema = z
+  .object({
+    firstName: name('First name'),
+    lastName: name('Last name'),
+    phone: z
+      .string()
+      .trim()
+      .regex(/^\+?[0-9\s\-()]{7,20}$/, 'Enter a valid phone number')
+      .or(z.literal('')),
+  })
+  .partial();
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
