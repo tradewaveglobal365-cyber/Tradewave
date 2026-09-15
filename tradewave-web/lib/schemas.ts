@@ -178,3 +178,27 @@ export const updateProfileSchema = z.object({
 });
 
 export type UpdateProfileValues = z.input<typeof updateProfileSchema>;
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * CONTRACT MIRROR of setPayoutAccountSchema in
+ * tradewave-api/src/modules/wallet/schemas.ts
+ *
+ * Whether the account NAME is acceptable is decided server-side against the
+ * verified identity — this only checks the shape.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+export const setPayoutAccountSchema = z.object({
+  bankCode: z.string().min(1, 'Choose a bank'),
+  accountNumber: z
+    .string()
+    .trim()
+    .regex(/^\d{10}$/, 'A Nigerian account number is 10 digits'),
+  accountName: z
+    .string()
+    .trim()
+    .min(2, 'Enter the name on the account')
+    .max(100, 'That name is too long'),
+});
+
+export type SetPayoutAccountValues = z.input<typeof setPayoutAccountSchema>;

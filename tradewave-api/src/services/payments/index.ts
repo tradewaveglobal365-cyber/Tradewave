@@ -3,13 +3,14 @@ import { env, isProduction } from '../../config/env';
 import { logger } from '../../lib/logger';
 import { KlashaPaymentProvider } from './klasha';
 import type {
+  Bank,
   ConfirmedPayment,
   CreateDepositAccountInput,
   DepositAccountDetails,
   PaymentProvider,
 } from './types';
 
-export type { PaymentProvider, ConfirmedPayment, DepositAccountDetails } from './types';
+export type { PaymentProvider, ConfirmedPayment, DepositAccountDetails, Bank } from './types';
 
 /**
  * Stand-in driver used until Klasha credentials exist.
@@ -56,6 +57,31 @@ export class StubPaymentProvider implements PaymentProvider {
 
   async listRecentPayments(limit: number): Promise<ConfirmedPayment[]> {
     return [...this.payments.values()].slice(0, limit);
+  }
+
+  /**
+   * A handful of real Nigerian banks, so the form is usable without Klasha
+   * credentials. Codes are the genuine NIBSS ones — a fake code in a dropdown
+   * would be a payout that silently fails later.
+   */
+  async listBanks(): Promise<Bank[]> {
+    return [
+      { code: '044', name: 'Access Bank' },
+      { code: '058', name: 'Guaranty Trust Bank' },
+      { code: '057', name: 'Zenith Bank' },
+      { code: '033', name: 'United Bank for Africa' },
+      { code: '011', name: 'First Bank of Nigeria' },
+      { code: '221', name: 'Stanbic IBTC Bank' },
+      { code: '232', name: 'Sterling Bank' },
+      { code: '50211', name: 'Kuda Microfinance Bank' },
+      { code: '999992', name: 'OPay' },
+      { code: '999991', name: 'PalmPay' },
+    ];
+  }
+
+  /** No remote side to ask, so the caller falls back to the typed name. */
+  async resolveAccountName(): Promise<string | null> {
+    return null;
   }
 
   parseWebhookReference(body: unknown): string | null {

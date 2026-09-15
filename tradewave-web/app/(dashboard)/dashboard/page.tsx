@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation';
 import { ArrowUpRight, Building2, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getCurrentUser } from '@/lib/session';
-import { getWallet } from '@/lib/wallet';
+import { getPayoutAccount, getWallet } from '@/lib/wallet';
 import { getPortfolio } from '@/lib/investments';
 import { formatAed } from '@/lib/money';
 import { PageHeader, EmptyState } from '@/components/dashboard/page-header';
@@ -15,10 +15,11 @@ import { HoldingCard } from '@/components/dashboard/holding-card';
 export const metadata: Metadata = { title: 'Overview · Tradewave' };
 
 export default async function DashboardPage() {
-  const [user, wallet, portfolio] = await Promise.all([
+  const [user, wallet, portfolio, payoutAccount] = await Promise.all([
     getCurrentUser(),
     getWallet(),
     getPortfolio(),
+    getPayoutAccount(),
   ]);
   if (!user) redirect('/login?next=/dashboard');
 
@@ -36,7 +37,11 @@ export default async function DashboardPage() {
         }
       />
 
-      <SetupChecklist user={user} hasBalance={Number(balanceCents) > 0} />
+      <SetupChecklist
+              user={user}
+              hasBalance={Number(balanceCents) > 0}
+              hasPayoutAccount={payoutAccount !== null}
+            />
 
       {hasHoldings && portfolio ? (
         <>

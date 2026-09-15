@@ -6,12 +6,18 @@ import { getCurrentUser } from '@/lib/session';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { SignOutAllButton } from '@/components/dashboard/sign-out-all-button';
 import { ProfileForm } from '@/components/settings/profile-form';
+import { PayoutAccountForm } from '@/components/settings/payout-account-form';
+import { getBanks, getPayoutAccount } from '@/lib/wallet';
 
 export const metadata: Metadata = { title: 'Settings · Tradewave' };
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
   if (!user) redirect('/login?next=/settings');
+
+  // Both are needed only for the payout card. Fetched in parallel rather than
+  // in sequence — each is its own round trip to the API.
+  const [account, banks] = await Promise.all([getPayoutAccount(), getBanks()]);
 
   return (
     <div>
@@ -69,9 +75,7 @@ export default async function SettingsPage() {
           icon={<Banknote className="size-4" />}
           description="Where your returns and withdrawals are sent."
         >
-          <p className="rounded-lg border border-dashed border-hairline bg-canvas px-3.5 py-3 text-[0.75rem] leading-relaxed text-muted-foreground">
-            No payout account added. This unlocks alongside withdrawals.
-          </p>
+          <PayoutAccountForm user={user} account={account} banks={banks} />
         </Card>
 
         <Card

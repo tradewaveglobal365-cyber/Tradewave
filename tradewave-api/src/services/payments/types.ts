@@ -55,6 +55,11 @@ export interface ConfirmedPayment {
   paidAt: Date | null;
 }
 
+export interface Bank {
+  code: string;
+  name: string;
+}
+
 export interface PaymentProvider {
   /** Identifies rows this driver wrote. Persisted on DepositAccount.provider. */
   readonly name: string;
@@ -87,6 +92,26 @@ export interface PaymentProvider {
    * Returns null when the body carries no usable reference.
    */
   parseWebhookReference(body: unknown): string | null;
+
+  /**
+   * The banks a payout can be sent to, for the currency given.
+   *
+   * Fetched rather than bundled: a static list goes stale silently, and a
+   * missing bank is a customer who cannot be paid.
+   */
+  listBanks(currency: string): Promise<Bank[]>;
+
+  /**
+   * Asks the bank who owns an account, for checking it against the verified
+   * identity. Returns null when the provider cannot tell us.
+   *
+   * Null is the honest answer today: Klasha references a "Resolve account
+   * number" endpoint but does not publish its path, so the caller falls back to
+   * matching the name the USER typed — a weaker check, recorded as such on the
+   * row. When this starts returning a name, the control tightens with no change
+   * outside the driver.
+   */
+  resolveAccountName(bankCode: string, accountNumber: string): Promise<string | null>;
 
   /**
    * Lists recent transactions, for the reconciliation sweep.

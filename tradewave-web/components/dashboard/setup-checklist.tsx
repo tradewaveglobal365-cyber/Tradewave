@@ -65,10 +65,11 @@ export function SetupChecklist({
     {
       id: 'payout',
       label: 'Add a payout account',
-      description: 'Where your returns and withdrawals are sent.',
+      description: 'Where your returns and withdrawals will be sent.',
       icon: Banknote,
       done: hasPayoutAccount,
-      pending: true,
+      href: '/settings',
+      cta: 'Add',
     },
     {
       id: 'fund',

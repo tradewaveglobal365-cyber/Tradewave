@@ -114,6 +114,7 @@ model User {
   investments      Investment[]
   deposits         Deposit[]
   depositAccount   DepositAccount?
+  payoutAccount    PayoutAccount?
   kycVerifications KycVerification[]
 
   createdAt DateTime @default(now())
@@ -337,6 +338,34 @@ model DepositAccount {
   updatedAt DateTime @updatedAt
 
   @@index([accountNumber])
+}
+
+// Where money leaves to. One per user, replaced in place rather than versioned:
+// there is a single destination, so there is no history to reconcile and no
+// "which account?" step when a withdrawal is eventually built.
+model PayoutAccount {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  provider String @default("klasha")
+
+  bankCode      String
+  bankName      String
+  // Stored whole because a payout needs it; shown masked to the user. A Nigerian
+  // account number is not secret the way a card number is, but it is still the
+  // thing an attacker would swap to redirect money.
+  accountNumber String
+  accountName   String
+
+  // Whether the name was confirmed by the BANK or merely asserted by the user.
+  // Klasha's resolve endpoint is not in their public docs yet, so every row is
+  // false today — and this is how you tell which accounts were only self-declared
+  // once it is switched on.
+  nameResolved Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Deposit {

@@ -1,9 +1,12 @@
 import { Router, type Request, type Response } from 'express';
 import { requireAuth, requireKyc } from '../../middleware/auth';
+import { validateBody } from '../../middleware/validate';
 import { depositAccountLimiter, depositWebhookLimiter } from '../../middleware/rate-limit';
 import { unauthorized } from '../../lib/errors';
 import { paymentProvider } from '../../services/payments';
 import { getWallet } from './wallet.service';
+import * as payout from './payout.service';
+import { setPayoutAccountSchema, type SetPayoutAccountInput } from './schemas';
 import {
   creditFromReference,
   getDepositAccount,
@@ -67,5 +70,36 @@ walletRouter.post(
     const reference = paymentProvider.parseWebhookReference(req.body);
     if (reference) await creditFromReference(reference);
     res.status(200).json({ received: true });
+  },
+);
+
+// ── Payout account ──────────────────────────────────────────────────────────
+
+/** The banks a payout can go to. Needed to render the form, so requireAuth only. */
+walletRouter.get('/banks', requireAuth, async (_req: Request, res: Response) => {
+  res.json({ banks: await payout.listBanks() });
+});
+
+walletRouter.get('/payout-account', requireAuth, async (req: Request, res: Response) => {
+  if (!req.auth) throw unauthorized();
+  res.json({ account: await payout.getPayoutAccount(req.auth.userId) });
+});
+
+/**
+ * Set or replace the account money will be paid to.
+ *
+ * requireKyc is load-bearing rather than conventional: the account name is
+ * checked against the VERIFIED identity, so without a passed check there is
+ * nothing to check against.
+ */
+walletRouter.put(
+  '/payout-account',
+  requireAuth,
+  requireKyc,
+  validateBody(setPayoutAccountSchema),
+  async (req: Request, res: Response) => {
+    if (!req.auth) throw unauthorized();
+    const input = req.body as SetPayoutAccountInput;
+    res.json({ account: await payout.setPayoutAccount(req.auth.userId, input) });
   },
 );

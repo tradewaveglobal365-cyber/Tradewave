@@ -57,3 +57,28 @@ export async function getWallet(): Promise<WalletSummary | null> {
 export async function getDepositAccount(): Promise<DepositAccount | null> {
   return authedGet<DepositAccount>('/wallet/deposit-account');
 }
+
+export interface Bank {
+  code: string;
+  name: string;
+}
+
+export interface PayoutAccount {
+  bankCode: string;
+  bankName: string;
+  /** Masked — the full number never leaves the API. */
+  accountNumberMasked: string;
+  accountName: string;
+  nameResolved: boolean;
+  updatedAt: string;
+}
+
+export async function getBanks(): Promise<Bank[]> {
+  const body = await authedGet<{ banks: Bank[] }>('/wallet/banks');
+  return body?.banks ?? [];
+}
+
+export async function getPayoutAccount(): Promise<PayoutAccount | null> {
+  const body = await authedGet<{ account: PayoutAccount | null }>('/wallet/payout-account');
+  return body?.account ?? null;
+}

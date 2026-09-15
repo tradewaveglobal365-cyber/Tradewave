@@ -1,6 +1,7 @@
 import { encryptedBody } from '../../lib/klasha-crypto';
 import { logger } from '../../lib/logger';
 import type {
+  Bank,
   ConfirmedPayment,
   CreateDepositAccountInput,
   DepositAccountDetails,
@@ -214,6 +215,45 @@ export class KlashaPaymentProvider implements PaymentProvider {
       logger.warn({ providerRef, err }, 'Klasha transaction status lookup failed');
       return null;
     }
+  }
+
+  /**
+   * Cached for a day. The list changes rarely, every investor adding a payout
+   * account loads it, and Klasha's own latency is not something to pay per form
+   * render.
+   */
+  private banks: { at: number; value: Bank[] } | null = null;
+
+  async listBanks(currency: string): Promise<Bank[]> {
+    const DAY = 24 * 60 * 60 * 1000;
+    if (this.banks && Date.now() - this.banks.at < DAY) return this.banks.value;
+
+    const body = await this.request<{ data?: { code?: string; name?: string }[] }>(
+      `/wallet/merchant/bank/transfer/request/banks/${encodeURIComponent(currency)}`,
+    );
+    const value = (body.data ?? [])
+      .filter((b): b is { code: string; name: string } => Boolean(b.code && b.name))
+      // Klasha returns names with stray leading spaces (" OJOKORO MICROFINANCE
+      // BANK" in their own documented example), which sorts them to the top of
+      // a dropdown for no reason.
+      .map((b) => ({ code: b.code, name: b.name.trim() }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    this.banks = { at: Date.now(), value };
+    return value;
+  }
+
+  /**
+   * Not implemented, deliberately.
+   *
+   * Klasha's payout documentation references a "Resolve account number"
+   * endpoint and then says it is in their Postman collection rather than giving
+   * a path. Guessing at it would either 404 on every save or, worse, hit
+   * something else. Returning null makes the caller fall back to matching the
+   * name the user typed, and record on the row that nobody confirmed it.
+   */
+  async resolveAccountName(): Promise<string | null> {
+    return null;
   }
 
   async listRecentPayments(limit: number): Promise<ConfirmedPayment[]> {
