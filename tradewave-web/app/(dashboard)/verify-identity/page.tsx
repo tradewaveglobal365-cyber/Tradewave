@@ -21,9 +21,19 @@ export default async function VerifyIdentityPage() {
 
   return (
     <div>
+      {/* The heading follows the status. It used to be fixed, so a verified
+          investor landing here read "Verify your identity — photograph an ID,
+          take a selfie" directly above a card telling them they were already
+          verified. The page contradicted itself. */}
       <PageHeader
-        title="Verify your identity"
-        description="Required before you can invest. Photograph an ID, take a selfie — about a minute."
+        title={status === 'VERIFIED' ? 'Identity' : 'Verify your identity'}
+        description={
+          status === 'VERIFIED'
+            ? 'Confirmed. There is nothing else to do here.'
+            : status === 'PENDING'
+              ? 'Your details are with our verification partner.'
+              : 'Required before you can invest. Photograph an ID, take a selfie — about a minute.'
+        }
       />
 
       <div className="max-w-xl">
