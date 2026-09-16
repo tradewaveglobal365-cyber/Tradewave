@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Banknote, Building2, type LucideIcon } from 'lucide-react';
+import { ArrowLeftRight, Banknote, Building2, Users, type LucideIcon } from 'lucide-react';
 
 export interface AdminNavItem {
   href: string;
@@ -19,6 +19,12 @@ export interface AdminNavItem {
  * KYC review and withdrawals all land this way when they are worth building.
  */
 export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
+  {
+    href: '/admin/investors',
+    label: 'Investors',
+    icon: Users,
+    description: 'Everyone who has signed up, and where each of them has got to.',
+  },
   {
     href: '/admin/properties',
     label: 'Properties',

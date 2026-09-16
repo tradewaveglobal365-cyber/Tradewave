@@ -81,3 +81,111 @@ export async function getAdminProperty(id: string): Promise<AdminProperty | null
   const body = await authedGet<{ property: AdminProperty }>(`/admin/properties/${id}`);
   return body?.property ?? null;
 }
+
+// ── Investors ────────────────────────────────────────────────────────────────
+
+export interface AdminInvestorRow {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  status: string;
+  role: string;
+  kycStatus: string;
+  emailVerified: boolean;
+  balanceCents: string;
+  investedCents: string;
+  investmentCount: number;
+  hasPayoutAccount: boolean;
+  createdAt: string;
+}
+
+export interface AdminInvestorList {
+  investors: AdminInvestorRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AdminInvestorDetail {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  country: string;
+  status: string;
+  role: string;
+  kycStatus: string;
+  emailVerified: boolean;
+  kycVerifiedAt: string | null;
+  lastLoginAt: string | null;
+  createdAt: string;
+
+  referralCode: string;
+  referredBy: { id: string; firstName: string; lastName: string } | null;
+  referralCount: number;
+
+  balanceCents: string;
+  entries: {
+    id: string;
+    type: string;
+    amountCents: string;
+    balanceAfterCents: string;
+    description: string;
+    createdAt: string;
+  }[];
+
+  investments: {
+    id: string;
+    propertyTitle: string;
+    propertySlug: string;
+    principalCents: string;
+    annualReturnBps: number;
+    termMonths: number;
+    status: string;
+    investedAt: string;
+    maturesAt: string;
+  }[];
+
+  payoutAccount: {
+    bankName: string;
+    accountNumberMasked: string;
+    accountName: string;
+    nameResolved: boolean;
+  } | null;
+
+  depositAccount: {
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+  } | null;
+
+  kyc: {
+    provider: string;
+    status: string;
+    documentType: string | null;
+    documentLast4: string | null;
+    rejectionReason: string | null;
+    submittedAt: string;
+    decidedAt: string | null;
+  } | null;
+}
+
+export async function getAdminInvestors(params: {
+  q?: string;
+  page?: number;
+}): Promise<AdminInvestorList | null> {
+  const search = new URLSearchParams();
+  if (params.q) search.set('q', params.q);
+  if (params.page && params.page > 1) search.set('page', String(params.page));
+  const qs = search.toString();
+  return authedGet<AdminInvestorList>(`/admin/investors${qs ? `?${qs}` : ''}`);
+}
+
+export async function getAdminInvestor(id: string): Promise<AdminInvestorDetail | null> {
+  const body = await authedGet<{ investor: AdminInvestorDetail }>(
+    `/admin/investors/${id}`,
+  );
+  return body?.investor ?? null;
+}

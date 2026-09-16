@@ -10,6 +10,7 @@ import {
   uploadPropertyImage,
 } from '../../services/storage';
 import * as service from './admin.service';
+import * as investors from './investor.service';
 import * as properties from './property-admin.service';
 import {
   createPropertySchema,
@@ -51,6 +52,24 @@ adminRouter.get('/deposits', async (_req: Request, res: Response) => {
  */
 adminRouter.post('/deposits/:id/retry', async (req: Request, res: Response) => {
   res.json({ deposit: await service.retryDeposit(id(req)) });
+});
+
+// ── Investors ────────────────────────────────────────────────────────────────
+
+/**
+ * Paged, because the number of users is not bounded by anything the way the
+ * deposit list is. An unparseable page number falls back to the first page
+ * rather than erroring — a bad query string is not worth a 400 on a read.
+ */
+adminRouter.get('/investors', async (req: Request, res: Response) => {
+  const q = typeof req.query.q === 'string' ? req.query.q : undefined;
+  const parsed = Number(req.query.page);
+  const page = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
+  res.json(await investors.listInvestors({ q, page }));
+});
+
+adminRouter.get('/investors/:id', async (req: Request, res: Response) => {
+  res.json({ investor: await investors.getInvestor(id(req)) });
 });
 
 // ── Properties ──────────────────────────────────────────────────────────────
