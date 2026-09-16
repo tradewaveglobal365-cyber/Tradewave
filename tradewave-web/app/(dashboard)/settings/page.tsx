@@ -1,13 +1,12 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { BadgeCheck, Banknote, ShieldCheck } from 'lucide-react';
+import { BadgeCheck, Banknote, ChevronRight, Landmark, ShieldCheck } from 'lucide-react';
 import { getCurrentUser } from '@/lib/session';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { SignOutAllButton } from '@/components/dashboard/sign-out-all-button';
 import { ProfileForm } from '@/components/settings/profile-form';
-import { PayoutAccountForm } from '@/components/settings/payout-account-form';
-import { getBanks, getPayoutAccount } from '@/lib/wallet';
+import { getPayoutAccount } from '@/lib/wallet';
 
 export const metadata: Metadata = { title: 'Settings · Tradewave' };
 
@@ -15,9 +14,10 @@ export default async function SettingsPage() {
   const user = await getCurrentUser();
   if (!user) redirect('/login?next=/settings');
 
-  // Both are needed only for the payout card. Fetched in parallel rather than
-  // in sequence — each is its own round trip to the API.
-  const [account, banks] = await Promise.all([getPayoutAccount(), getBanks()]);
+  // Only the account itself is needed here now. The bank list is fetched by
+  // /settings/payout-account, which is the only page that renders the form —
+  // so loading Settings no longer waits on a call to Klasha it cannot use.
+  const account = await getPayoutAccount();
 
   return (
     <div>
@@ -70,12 +70,48 @@ export default async function SettingsPage() {
           ) : null}
         </Card>
 
+        {/* A summary that links out, not the form itself. Settings is a page
+            you scan; adding a payout account is a task you arrive at with
+            intent, and it now has its own screen rather than sitting three
+            cards down this one. */}
         <Card
           title="Payout account"
           icon={<Banknote className="size-4" />}
           description="Where your returns and withdrawals are sent."
         >
-          <PayoutAccountForm user={user} account={account} banks={banks} />
+          <Link
+            href="/settings/payout-account"
+            className="group flex items-center gap-3 rounded-lg border border-hairline bg-canvas px-4 py-3.5 transition-colors hover:border-brand-700/40 hover:bg-brand-100/30"
+          >
+            <Landmark className="size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              {account ? (
+                <>
+                  <p className="truncate text-[0.875rem] font-medium text-foreground">
+                    {account.bankName}
+                  </p>
+                  <p className="mt-0.5 font-mono text-[0.75rem] tracking-[0.04em] text-muted-foreground tabular-nums">
+                    {account.accountNumberMasked}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[0.875rem] font-medium text-foreground">
+                    Add a payout account
+                  </p>
+                  <p className="mt-0.5 text-[0.75rem] text-muted-foreground">
+                    {user.kycStatus === 'VERIFIED'
+                      ? 'Takes about a minute.'
+                      : 'Available once your identity is verified.'}
+                  </p>
+                </>
+              )}
+            </div>
+            <span className="shrink-0 text-[0.8125rem] font-medium text-brand-700">
+              {account ? 'Manage' : 'Add'}
+            </span>
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+          </Link>
         </Card>
 
         <Card

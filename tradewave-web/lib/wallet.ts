@@ -73,9 +73,18 @@ export interface PayoutAccount {
   updatedAt: string;
 }
 
-export async function getBanks(): Promise<Bank[]> {
+/**
+ * The banks a payout can be sent to, or null when the list could not be loaded.
+ *
+ * The null is the point. Coalescing a failed request to [] renders a dropdown
+ * containing nothing but "Choose a bank", which looks like a bug in the form
+ * rather than a provider that is unreachable — and gives the user nothing to
+ * act on. Callers render the two cases differently.
+ */
+export async function getBanks(): Promise<Bank[] | null> {
   const body = await authedGet<{ banks: Bank[] }>('/wallet/banks');
-  return body?.banks ?? [];
+  if (!body || !Array.isArray(body.banks) || body.banks.length === 0) return null;
+  return body.banks;
 }
 
 export async function getPayoutAccount(): Promise<PayoutAccount | null> {

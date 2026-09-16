@@ -68,7 +68,9 @@ export function SetupChecklist({
       description: 'Where your returns and withdrawals will be sent.',
       icon: Banknote,
       done: hasPayoutAccount,
-      href: '/settings',
+      // Its own page, not /settings — this button used to drop the user at the
+      // top of Settings with the form three cards below the fold.
+      href: '/settings/payout-account',
       cta: 'Add',
     },
     {

@@ -112,3 +112,16 @@ export const depositsUnavailable = (
 export const storageUnavailable = (
   message = 'Image storage is not configured yet.',
 ) => new AppError(503, 'STORAGE_UNAVAILABLE', message);
+
+/**
+ * The list of payout banks could not be fetched from the provider.
+ *
+ * 503 with its own code rather than a 500, for the same reason as the two
+ * above, plus one specific to this route: a bank dropdown that arrives empty
+ * looks identical to a bank dropdown that is still loading, and the client
+ * cannot tell the difference from a 500 either. With this the form can say
+ * what actually happened instead of rendering a select with nothing in it.
+ */
+export const banksUnavailable = (
+  message = 'We could not load the list of banks. Please try again shortly.',
+) => new AppError(503, 'BANKS_UNAVAILABLE', message);

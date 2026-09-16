@@ -84,6 +84,20 @@ describe('reaching the payout account', () => {
     expect(res.body.banks[0]).toHaveProperty('code');
     expect(res.body.banks[0]).toHaveProperty('name');
   });
+
+  // A provider outage must not reach the browser as a 500 with no banks in it.
+  // An empty <select> is indistinguishable from one that is still loading, so
+  // the client needs to be told this failed in order to say so.
+  it('answers 503 BANKS_UNAVAILABLE when the provider cannot be reached', async () => {
+    const { agent } = await verified('banksdown@example.com');
+    vi.spyOn(paymentProvider, 'listBanks').mockRejectedValueOnce(
+      new Error('socket hang up'),
+    );
+
+    const res = await agent.get('/api/v1/wallet/banks').expect(503);
+    expect(res.body.error.code).toBe('BANKS_UNAVAILABLE');
+    expect(res.body).not.toHaveProperty('banks');
+  });
 });
 
 describe('the name check', () => {

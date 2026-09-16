@@ -1,8 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import { requireAuth, requireKyc } from '../../middleware/auth';
+import { logger } from '../../lib/logger';
 import { validateBody } from '../../middleware/validate';
 import { depositAccountLimiter, depositWebhookLimiter } from '../../middleware/rate-limit';
-import { unauthorized } from '../../lib/errors';
+import { banksUnavailable, unauthorized } from '../../lib/errors';
 import { paymentProvider } from '../../services/payments';
 import { getWallet } from './wallet.service';
 import * as payout from './payout.service';
@@ -75,9 +76,23 @@ walletRouter.post(
 
 // ── Payout account ──────────────────────────────────────────────────────────
 
-/** The banks a payout can go to. Needed to render the form, so requireAuth only. */
+/**
+ * The banks a payout can go to. Needed to render the form, so requireAuth only.
+ *
+ * A provider failure is translated into 503 BANKS_UNAVAILABLE rather than
+ * allowed to become a 500. The difference matters to the form at the other end:
+ * an empty list and a failed request look the same in a <select>, and the user
+ * is left staring at a dropdown with nothing in it and no idea why.
+ */
 walletRouter.get('/banks', requireAuth, async (_req: Request, res: Response) => {
-  res.json({ banks: await payout.listBanks() });
+  let banks;
+  try {
+    banks = await payout.listBanks();
+  } catch (err) {
+    logger.error({ err }, 'Could not load the bank list from the payment provider');
+    throw banksUnavailable();
+  }
+  res.json({ banks });
 });
 
 walletRouter.get('/payout-account', requireAuth, async (req: Request, res: Response) => {
