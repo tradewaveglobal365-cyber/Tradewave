@@ -92,14 +92,27 @@ export class KlashaPaymentProvider implements PaymentProvider {
 
     const res = await fetch(`${this.baseUrl}/auth/account/v2/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // Their authentication page: "Ensure to include this in all request
+        // headers as value for x-auth-token". ALL includes this one. Without
+        // it the login answers 403 — not 401 — which reads like bad
+        // credentials and is not: the request is rejected before it is ever
+        // checked against an account.
+        'x-auth-token': this.publicKey,
+      },
       body: JSON.stringify({
         username: this.accountEmail,
         password: this.accountPassword,
       }),
     });
     if (!res.ok) {
-      throw new Error(`Klasha login failed: ${res.status}`);
+      // The status alone says almost nothing — 403 covers a missing key header,
+      // a key from the wrong environment, and an account not enabled for live.
+      // Klasha's body distinguishes them, so it goes in the message the way
+      // request() already does. Response body only; no credential is echoed.
+      const detail = await res.text().catch(() => '');
+      throw new Error(`Klasha login failed: ${res.status} ${detail.slice(0, 200)}`);
     }
     const body = (await res.json()) as { data?: { token?: string; access_token?: string } };
     const value = body.data?.token ?? body.data?.access_token;

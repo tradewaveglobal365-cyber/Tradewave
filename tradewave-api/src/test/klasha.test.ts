@@ -160,6 +160,29 @@ describe('resolving a bank account', () => {
     mockFetch({ ok: true, body: { data: { account_name: '   ' } } });
     await expect(klasha.resolveAccountName('044', '9067777000')).resolves.toBeNull();
   });
+
+  // Production answered 403 on every Klasha call because the login request was
+  // the one place the merchant key was not sent. Their docs say "all request
+  // headers"; this pins that the login is included in "all".
+  it('sends the merchant key on the login request itself', async () => {
+    const spy = mockFetch({ ok: true, body: { data: { account_name: 'JOHN DOE' } } });
+    // A fresh provider: the shared one above has already cached a token, so it
+    // would never hit the login endpoint and the assertion would pass vacuously.
+    const fresh = new KlashaPaymentProvider('https://example.test', 'pk', KEY_24, 'a@b.c', 'pw');
+    await fresh.resolveAccountName('044', '9067777000');
+
+    const login = spy.mock.calls.find(([url]) => String(url).includes('/auth/account/v2/login'));
+    const headers = (login?.[1] as RequestInit).headers as Record<string, string>;
+    expect(headers['x-auth-token']).toBe('pk');
+  });
+
+  it('puts Klasha’s own words in the login error', async () => {
+    // A bare status sent us looking in the wrong place once already.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ message: 'Invalid merchant key' }), { status: 403 }),
+    );
+    await expect(klasha.listBanks('NGN')).rejects.toThrow(/403.*Invalid merchant key/);
+  });
 });
 
 describe('the deposit webhook', () => {
