@@ -25,6 +25,12 @@ export default async function VerifyIdentityPage() {
   // verified", which is the confirmation they came back for.
   if (status === 'VERIFIED') redirect('/settings');
 
+  // "In Review" is the provider saying a human has to look at this; "In
+  // Progress" is the user not having finished. Both are PENDING to us and they
+  // mean opposite things, so the copy must not guess between them.
+  const underReview = kyc?.providerStatus === 'In Review';
+  const waitedFor = relativeSince(kyc?.submittedAt ?? null);
+
   return (
     <div>
       {/* Follows the status. A verified user never reaches this page at all. */}
@@ -44,11 +50,17 @@ export default async function VerifyIdentityPage() {
           <Panel
             tone="wait"
             icon={Clock}
-            title="We're reviewing your details"
+            title={
+              underReview
+                ? 'A person is checking your document'
+                : "We're reviewing your details"
+            }
             body={
-              kyc?.documentLast4
-                ? `Document ending ${kyc.documentLast4}. This page updates itself — you don't have to wait here.`
-                : 'This page updates itself as soon as the check completes.'
+              underReview
+                ? `Most checks finish within a day. Submitted ${waitedFor}. We'll email you as soon as it is decided — you don't have to wait on this page.`
+                : kyc?.documentLast4
+                  ? `Document ending ${kyc.documentLast4}. This page updates itself — you don't have to wait here.`
+                  : 'This page updates itself as soon as the check completes.'
             }
           >
             <VerificationPoller />
@@ -61,6 +73,24 @@ export default async function VerifyIdentityPage() {
                   <a href={kyc.redirectUrl}>Continue verification</a>
                 </Button>
               </>
+            ) : null}
+
+            {/* The escape hatch, offered only once a review has dragged on.
+                Somebody whose document is sitting in a queue has no way forward
+                and no way back, and "wait" stops being an answer you can give a
+                person after two days. */}
+            {kyc?.stalled ? (
+              <div className="mt-5 border-t border-hairline pt-5">
+                <p className="mb-3 text-[0.8125rem] leading-relaxed text-muted-foreground">
+                  This is taking longer than it should. You can start a new check with a
+                  different document rather than keep waiting — the one in progress
+                  will be set aside.
+                </p>
+                <VerifyIdentityForm
+                  user={user}
+                  attemptsRemaining={kyc.attemptsRemaining}
+                />
+              </div>
             ) : null}
           </Panel>
         ) : status === 'REJECTED' || status === 'EXPIRED' ? (
@@ -144,4 +174,14 @@ function Panel({
       {children ? <div className="mt-5">{children}</div> : null}
     </div>
   );
+}
+
+/** "3 days ago" — plain enough that nobody has to work out what it means. */
+function relativeSince(iso: string | null): string {
+  if (!iso) return 'recently';
+  const hours = Math.floor((Date.now() - new Date(iso).getTime()) / (60 * 60 * 1000));
+  if (hours < 1) return 'just now';
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days === 1 ? '' : 's'} ago`;
 }

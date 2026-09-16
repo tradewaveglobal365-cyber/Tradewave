@@ -347,3 +347,67 @@ export async function getInvestor(userId: string): Promise<AdminInvestorDetail> 
     kyc: user.kycVerifications[0] ?? null,
   };
 }
+
+// ── Identity review queue ────────────────────────────────────────────────────
+
+/**
+ * Verifications the provider has escalated and nobody has actioned.
+ *
+ * Didit hands a document it is unsure about to a human. That human is us, and
+ * nothing said so — a real investor sat in the queue for three days and we only
+ * found out because he got in touch. The queue existed; there was simply no
+ * window onto it.
+ *
+ * The decision itself is taken in the Didit console, which has the document
+ * scan and the selfie. This is the window: who is waiting, since when, and a
+ * link straight to the session.
+ */
+export interface AdminReviewRow {
+  verificationId: string;
+  providerRef: string | null;
+  providerStatus: string | null;
+  submittedAt: Date;
+  /** Whole hours waiting, so the UI does not have to do date arithmetic. */
+  waitingHours: number;
+  livenessScore: number | null;
+  faceMatchScore: number | null;
+  documentType: string | null;
+  user: { id: string; email: string; firstName: string; lastName: string };
+}
+
+/**
+ * "In Review" specifically, not every PENDING row.
+ *
+ * A session the user opened and abandoned is also PENDING, and putting those in
+ * front of staff would bury the ones that actually need a decision under ones
+ * that need nothing at all.
+ */
+export async function listPendingReviews(): Promise<AdminReviewRow[]> {
+  const rows = await prisma.kycVerification.findMany({
+    where: { status: 'PENDING', providerStatus: 'In Review' },
+    orderBy: { submittedAt: 'asc' },
+    select: {
+      id: true,
+      providerRef: true,
+      providerStatus: true,
+      submittedAt: true,
+      livenessScore: true,
+      faceMatchScore: true,
+      documentType: true,
+      user: { select: { id: true, email: true, firstName: true, lastName: true } },
+    },
+  });
+
+  const now = Date.now();
+  return rows.map((r) => ({
+    verificationId: r.id,
+    providerRef: r.providerRef,
+    providerStatus: r.providerStatus,
+    submittedAt: r.submittedAt,
+    waitingHours: Math.floor((now - r.submittedAt.getTime()) / (60 * 60 * 1000)),
+    livenessScore: r.livenessScore,
+    faceMatchScore: r.faceMatchScore,
+    documentType: r.documentType,
+    user: r.user,
+  }));
+}

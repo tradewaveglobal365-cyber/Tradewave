@@ -4,6 +4,7 @@ import { createApp } from '../app';
 import { prisma } from '../lib/prisma';
 import { emailService } from '../services/email';
 import { kycProvider } from '../services/kyc';
+import { applyDecision } from '../modules/kyc/kyc.service';
 import { dollarsToCents } from '../lib/money';
 import { migrateTestDatabase, resetDatabase } from './helpers';
 
@@ -140,6 +141,103 @@ describe('starting identity verification', () => {
 
     expect(res.status).toBe(429);
     expect(await prisma.kycVerification.count({ where: { userId } })).toBe(3);
+  });
+});
+
+describe('a review nobody is working', () => {
+  /**
+   * The case that prompted this: a real investor whose document the provider
+   * escalated to manual review, sitting untouched for three days with no retry
+   * and no way back.
+   */
+  async function pendingFor(email: string, ms: number) {
+    const { agent, userId } = await createUser(email);
+    const row = await prisma.kycVerification.create({
+      data: {
+        userId,
+        provider: 'didit',
+        status: 'PENDING',
+        providerStatus: 'In Review',
+        submittedAt: new Date(Date.now() - ms),
+      },
+    });
+    await prisma.user.update({ where: { id: userId }, data: { kycStatus: 'PENDING' } });
+    return { agent, userId, verificationId: row.id };
+  }
+
+  const HOURS = 60 * 60 * 1000;
+
+  it('offers no retry while the review is still fresh', async () => {
+    const { agent } = await pendingFor('fresh@example.com', 2 * HOURS);
+
+    const res = await agent.get('/api/v1/kyc/me').expect(200);
+    expect(res.body.status).toBe('PENDING');
+    expect(res.body.canRetry).toBe(false);
+    expect(res.body.stalled).toBe(false);
+  });
+
+  it('offers a retry once it has gone stale', async () => {
+    const { agent } = await pendingFor('stale@example.com', 72 * HOURS);
+
+    const res = await agent.get('/api/v1/kyc/me').expect(200);
+    expect(res.body.status).toBe('PENDING');
+    expect(res.body.canRetry).toBe(true);
+    expect(res.body.stalled).toBe(true);
+  });
+
+  it('refuses a second session while the first is still fresh', async () => {
+    const { agent, userId } = await pendingFor('blocked@example.com', 1 * HOURS);
+
+    await agent.post('/api/v1/kyc/submit').set('Origin', ORIGIN).send({ consent: true });
+
+    // Still exactly one attempt: a live review must not be duplicated.
+    expect(await prisma.kycVerification.count({ where: { userId } })).toBe(1);
+  });
+
+  it('starts a fresh attempt once the old one is stale, and retires the old row', async () => {
+    const { agent, userId, verificationId } = await pendingFor('escape@example.com', 72 * HOURS);
+
+    await agent
+      .post('/api/v1/kyc/submit')
+      .set('Origin', ORIGIN)
+      .send({ consent: true })
+      .expect(201);
+
+    const old = await prisma.kycVerification.findUniqueOrThrow({
+      where: { id: verificationId },
+    });
+    expect(old.status).toBe('EXPIRED');
+    expect(await prisma.kycVerification.count({ where: { userId } })).toBe(2);
+  });
+
+  it('will not let a late decision on the retired attempt overwrite the new one', async () => {
+    // The provider may still review the abandoned session days later. That
+    // decision must not reach back and change a user who has since verified.
+    const { agent, userId, verificationId } = await pendingFor('late@example.com', 72 * HOURS);
+    await agent
+      .post('/api/v1/kyc/submit')
+      .set('Origin', ORIGIN)
+      .send({ consent: true })
+      .expect(201);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(user.kycStatus).toBe('VERIFIED');
+
+    await applyDecision({
+      reference: verificationId,
+      providerRef: 'didit-late',
+      status: 'REJECTED',
+      providerStatus: 'Declined',
+      rejectionReason: 'Too late to matter',
+    });
+
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(after.kycStatus).toBe('VERIFIED');
+    const retired = await prisma.kycVerification.findUniqueOrThrow({
+      where: { id: verificationId },
+    });
+    // Retired, and applyDecision only ever transitions OUT of PENDING.
+    expect(retired.status).toBe('EXPIRED');
   });
 });
 

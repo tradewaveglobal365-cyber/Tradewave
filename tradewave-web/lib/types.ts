@@ -139,5 +139,13 @@ export interface KycStatusView {
   submittedAt: string | null;
   decidedAt: string | null;
   canRetry: boolean;
+  /**
+   * The provider's own status, unmapped: "In Review" means a human has to look,
+   * "In Progress" means the user never finished. Both arrive as PENDING, so the
+   * copy would otherwise have to guess which one it is talking about.
+   */
+  providerStatus: string | null;
+  /** Awaiting a decision that has taken long enough to offer a way out. */
+  stalled: boolean;
   attemptsRemaining: number;
 }

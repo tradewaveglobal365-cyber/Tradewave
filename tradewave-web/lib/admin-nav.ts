@@ -1,4 +1,11 @@
-import { ArrowLeftRight, Banknote, Building2, Users, type LucideIcon } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  Banknote,
+  Building2,
+  ShieldCheck,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 
 export interface AdminNavItem {
   href: string;
@@ -24,6 +31,12 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     label: 'Investors',
     icon: Users,
     description: 'Everyone who has signed up, and where each of them has got to.',
+  },
+  {
+    href: '/admin/identity',
+    label: 'Identity',
+    icon: ShieldCheck,
+    description: 'Verifications the provider escalated and is waiting on us to decide.',
   },
   {
     href: '/admin/properties',

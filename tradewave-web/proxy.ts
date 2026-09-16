@@ -27,7 +27,7 @@ const API_BASE = process.env.API_ORIGIN
 /**
  * Reads exp out of the access JWT without verifying it.
  *
- * Verification is the API\u2019s job and happens on every call. All this decides is
+ * Verification is the API’s job and happens on every call. All this decides is
  * whether a refresh round trip is worth making, so a forged token costs one
  * wasted request and nothing more.
  */
@@ -49,7 +49,7 @@ function accessTokenIsFresh(token: string | undefined): boolean {
   }
 }
 
-/** "name=value; Path=/; HttpOnly" \u2192 ["name", "value"] */
+/** "name=value; Path=/; HttpOnly" → ["name", "value"] */
 function nameAndValue(setCookie: string): [string, string] | null {
   const pair = setCookie.split(';', 1)[0];
   if (!pair) return null;
@@ -62,9 +62,9 @@ function nameAndValue(setCookie: string): [string, string] | null {
  * Trades the refresh token for a new access token.
  *
  * The access token lives fifteen minutes, the refresh token thirty days, and
- * until now nothing ever called /auth/refresh \u2014 so every user was signed out a
+ * until now nothing ever called /auth/refresh — so every user was signed out a
  * quarter of an hour after logging in, and anyone who stepped away to verify
- * their identity on the provider\u2019s site came back to a login screen.
+ * their identity on the provider’s site came back to a login screen.
  *
  * This has to happen here rather than during render: Server Components can read
  * cookies but cannot set them, so a refresh performed while rendering could
@@ -90,7 +90,7 @@ async function refreshSession(req: NextRequest): Promise<string[] | null> {
       headers: { cookie: `${REFRESH_COOKIE}=${refresh}` },
       cache: 'no-store',
     });
-    // 401 is a real end of session \u2014 expired, revoked, or reuse detected. Let
+    // 401 is a real end of session — expired, revoked, or reuse detected. Let
     // the redirect below deal with it.
     if (!res.ok) return null;
     const issued = res.headers.getSetCookie();

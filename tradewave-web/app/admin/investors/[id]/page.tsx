@@ -6,7 +6,7 @@ import { getAdminInvestor } from '@/lib/admin';
 import { formatUsd } from '@/lib/money';
 import { KycPill } from '@/components/admin/investor-pills';
 
-export const metadata: Metadata = { title: 'Investor \u00b7 Admin' };
+export const metadata: Metadata = { title: 'Investor · Admin' };
 
 const ENTRY_LABELS: Record<string, string> = {
   DEPOSIT: 'Wallet funding',
@@ -18,7 +18,7 @@ const ENTRY_LABELS: Record<string, string> = {
 };
 
 function date(value: string | null): string {
-  if (!value) return '\u2014';
+  if (!value) return '—';
   return new Date(value).toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
@@ -31,7 +31,7 @@ function date(value: string | null): string {
  *
  * Read-only. Suspending an account, forcing a KYC recheck and adjusting a
  * balance are all real needs and all of them are decisions about money or
- * access \u2014 they deserve their own design rather than a button added to a
+ * access — they deserve their own design rather than a button added to a
  * detail page because there was room for one.
  */
 export default async function InvestorPage({
@@ -98,7 +98,7 @@ export default async function InvestorPage({
                             credit ? 'text-gain' : 'text-foreground'
                           }`}
                         >
-                          {credit ? '+' : '\u2212'}
+                          {credit ? '+' : '−'}
                           {formatUsd(e.amountCents.replace('-', ''))}
                         </p>
                         <p className="mt-0.5 text-[0.6875rem] text-muted-foreground tabular-nums">
@@ -134,7 +134,7 @@ export default async function InvestorPage({
                     </div>
                     <p className="mt-1 text-[0.6875rem] text-muted-foreground">
                       {(inv.annualReturnBps / 100).toFixed(2)}% a year over {inv.termMonths}{' '}
-                      months \u00b7 {inv.status.toLowerCase()} \u00b7 matures {date(inv.maturesAt)}
+                      months · {inv.status.toLowerCase()} · matures {date(inv.maturesAt)}
                     </p>
                   </li>
                 ))}
@@ -147,7 +147,7 @@ export default async function InvestorPage({
           <Card title="Account">
             <Row label="Status" value={investor.status.toLowerCase().replace(/_/g, ' ')} />
             <Row label="Email verified" value={investor.emailVerified ? 'Yes' : 'No'} />
-            <Row label="Phone" value={investor.phone ?? '\u2014'} />
+            <Row label="Phone" value={investor.phone ?? '—'} />
             <Row label="Country" value={investor.country} />
             <Row label="Joined" value={date(investor.createdAt)} />
             <Row label="Last signed in" value={date(investor.lastLoginAt)} />
@@ -163,8 +163,8 @@ export default async function InvestorPage({
                   label="Document"
                   value={
                     investor.kyc.documentLast4
-                      ? `${investor.kyc.documentType ?? 'Document'} \u2022\u2022\u2022\u2022${investor.kyc.documentLast4}`
-                      : '\u2014'
+                      ? `${investor.kyc.documentType ?? 'Document'} ••••${investor.kyc.documentLast4}`
+                      : '—'
                   }
                 />
                 <Row label="Submitted" value={date(investor.kyc.submittedAt)} />
@@ -214,7 +214,7 @@ export default async function InvestorPage({
               </>
             ) : (
               <p className="text-[0.8125rem] text-muted-foreground">
-                Not issued \u2014 it is created the first time they open the wallet after
+                Not issued — it is created the first time they open the wallet after
                 verifying.
               </p>
             )}
@@ -228,7 +228,7 @@ export default async function InvestorPage({
               value={
                 investor.referredBy
                   ? `${investor.referredBy.firstName} ${investor.referredBy.lastName}`
-                  : '\u2014'
+                  : '—'
               }
             />
           </Card>

@@ -6,7 +6,7 @@ import { getCurrentUser } from '@/lib/session';
 import { PayoutAccountForm } from '@/components/settings/payout-account-form';
 import { getBanks, getPayoutAccount } from '@/lib/wallet';
 
-export const metadata: Metadata = { title: 'Payout account \u00b7 Tradewave' };
+export const metadata: Metadata = { title: 'Payout account · Tradewave' };
 
 /**
  * Adding a payout account, on its own screen.

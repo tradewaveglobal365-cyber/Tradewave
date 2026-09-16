@@ -215,3 +215,44 @@ describe('one investor', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('the identity review queue', () => {
+  it('lists only what the provider escalated, oldest first', async () => {
+    const { userId: waiting } = await createUser('review@example.com', 'Moses', 'Ateghie');
+    const { userId: abandoned } = await createUser('halfway@example.com');
+    const { agent } = await createAdmin('staff@example.com');
+
+    await prisma.kycVerification.create({
+      data: {
+        userId: waiting,
+        provider: 'didit',
+        status: 'PENDING',
+        providerStatus: 'In Review',
+        livenessScore: 100,
+        faceMatchScore: 87.11,
+        submittedAt: new Date(Date.now() - 72 * 60 * 60 * 1000),
+      },
+    });
+    // Opened the flow and walked away. Also PENDING, needs nothing from staff,
+    // and must not bury the row that does.
+    await prisma.kycVerification.create({
+      data: {
+        userId: abandoned,
+        provider: 'didit',
+        status: 'PENDING',
+        providerStatus: 'In Progress',
+      },
+    });
+
+    const res = await agent.get('/api/v1/admin/identity/reviews').expect(200);
+    expect(res.body.reviews).toHaveLength(1);
+    expect(res.body.reviews[0].user.email).toBe('review@example.com');
+    expect(res.body.reviews[0].waitingHours).toBeGreaterThanOrEqual(71);
+    expect(res.body.reviews[0].faceMatchScore).toBeCloseTo(87.11);
+  });
+
+  it('is refused to an ordinary user', async () => {
+    const { agent } = await createUser('nosy2@example.com');
+    expect((await agent.get('/api/v1/admin/identity/reviews')).status).toBe(403);
+  });
+});

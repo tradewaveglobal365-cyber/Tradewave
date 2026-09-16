@@ -189,3 +189,22 @@ export async function getAdminInvestor(id: string): Promise<AdminInvestorDetail 
   );
   return body?.investor ?? null;
 }
+
+// ── Identity review queue ────────────────────────────────────────────────────
+
+export interface AdminReviewRow {
+  verificationId: string;
+  providerRef: string | null;
+  providerStatus: string | null;
+  submittedAt: string;
+  waitingHours: number;
+  livenessScore: number | null;
+  faceMatchScore: number | null;
+  documentType: string | null;
+  user: { id: string; email: string; firstName: string; lastName: string };
+}
+
+export async function getPendingReviews(): Promise<AdminReviewRow[]> {
+  const body = await authedGet<{ reviews: AdminReviewRow[] }>('/admin/identity/reviews');
+  return body?.reviews ?? [];
+}

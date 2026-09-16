@@ -178,6 +178,12 @@ model KycVerification {
   documentHash  String?
 
   status          KycStatus
+  /// The provider's own word for where this sits, verbatim, e.g. "In Review",
+  /// "In Progress", "Approved". Several of those collapse into our PENDING, and
+  /// the difference between "In Review" and "In Progress" is the difference
+  /// between waiting on US and waiting on the USER — which decides both what we
+  /// tell the investor and what appears in the admin review queue.
+  providerStatus  String?
   rejectionReason String?
 
   /// Where to send the user to finish. Kept so an abandoned session can be

@@ -14,6 +14,21 @@ import type { KycDecision } from '../../services/kyc/types';
  * costs real money, so the ceiling that actually protects the budget has to be
  * one the database enforces and the tests can exercise.
  */
+/**
+ * How long a PENDING attempt may sit before the user may abandon it and start
+ * again.
+ *
+ * Sessions the provider escalates to manual review have no deadline of their
+ * own until they expire, which for Didit is a week. Somebody whose document is
+ * sitting in a queue nobody is working has no way forward and no way back, and
+ * "wait" is not an answer you can give a person for seven days.
+ *
+ * The cost of being wrong in this direction is a second paid check and an
+ * orphaned session still needing review. The cost of the other direction is an
+ * investor who cannot use the product at all.
+ */
+const STALE_REVIEW_MS = 48 * 60 * 60 * 1000;
+
 const MAX_ATTEMPTS_PER_DAY = 3;
 const MAX_ATTEMPTS_LIFETIME = 10;
 
@@ -29,8 +44,23 @@ export interface KycStatusView {
   redirectUrl: string | null;
   submittedAt: Date | null;
   decidedAt: Date | null;
+  /**
+   * The provider's own status, unmapped. "In Review" means a human has to look
+   * at this; "In Progress" means the user never finished. Both are PENDING here
+   * and they mean opposite things, so the UI is given the distinction rather
+   * than left to guess.
+   */
+  providerStatus: string | null;
   canRetry: boolean;
+  /** Awaiting a decision that has taken long enough to offer a way out. */
+  stalled: boolean;
   attemptsRemaining: number;
+}
+
+/** A pending attempt old enough that waiting is no longer a reasonable ask. */
+function isStale(latest: KycVerification | null): boolean {
+  if (!latest || latest.status !== 'PENDING') return false;
+  return Date.now() - latest.submittedAt.getTime() > STALE_REVIEW_MS;
 }
 
 function view(
@@ -47,9 +77,19 @@ function view(
     redirectUrl: status === 'PENDING' ? (latest?.redirectUrl ?? null) : null,
     submittedAt: latest?.submittedAt ?? null,
     decidedAt: latest?.decidedAt ?? null,
+    providerStatus: latest?.providerStatus ?? null,
     canRetry:
       remaining > 0 &&
-      (status === 'NOT_STARTED' || status === 'REJECTED' || status === 'EXPIRED'),
+      (status === 'NOT_STARTED' ||
+        status === 'REJECTED' ||
+        status === 'EXPIRED' ||
+        // A review that has gone stale. Normally PENDING must not be retried —
+        // a second session while the first is live wastes a paid check and
+        // muddies the record — but a queue nobody is working is not a state to
+        // trap somebody in.
+        (status === 'PENDING' && isStale(latest))),
+    /** True only for the stale-review case, so the UI can explain itself. */
+    stalled: status === 'PENDING' && isStale(latest),
     attemptsRemaining: remaining,
   };
 }
@@ -72,6 +112,18 @@ export async function applyDecision(decision: KycDecision): Promise<void> {
     logger.warn({ reference: decision.reference }, 'Decision for unknown verification');
     return;
   }
+  // Record the provider's own word for where this sits even when our mapped
+  // status does not change. "In Review" and "In Progress" both collapse into
+  // PENDING, and telling them apart is what lets the investor be told whether
+  // someone is looking at their document or whether they never finished — and
+  // what puts a session in front of an admin instead of nowhere.
+  if (decision.providerStatus) {
+    await prisma.kycVerification.updateMany({
+      where: { id: row.id, status: 'PENDING' },
+      data: { providerStatus: decision.providerStatus },
+    });
+  }
+
   if (decision.status === 'PENDING') return;
 
   // The dedupe key is the number the PROVIDER read off the verified document, so
@@ -117,6 +169,7 @@ export async function applyDecision(decision: KycDecision): Promise<void> {
         documentLast4: decision.documentNumber
           ? decision.documentNumber.slice(-4)
           : null,
+        providerStatus: decision.providerStatus ?? undefined,
         decidedAt: new Date(),
       },
     });
@@ -189,9 +242,31 @@ export async function submit(userId: string): Promise<KycStatusView> {
     select: { kycStatus: true, firstName: true, lastName: true, email: true },
   });
 
-  // Already through, or already awaiting a decision: never start a second session.
-  if (user.kycStatus === 'VERIFIED' || user.kycStatus === 'PENDING') {
-    return getStatus(userId);
+  // Already through: never start another.
+  if (user.kycStatus === 'VERIFIED') return getStatus(userId);
+
+  // Awaiting a decision: normally do not start a second session either. The
+  // exception is an attempt that has been pending past STALE_REVIEW_MS, which
+  // is the only escape from a review queue nobody is working.
+  if (user.kycStatus === 'PENDING') {
+    const pending = await prisma.kycVerification.findFirst({
+      where: { userId, status: 'PENDING' },
+      orderBy: { submittedAt: 'desc' },
+    });
+    if (!isStale(pending)) return getStatus(userId);
+
+    // Retire it, so the user leaves PENDING and the old attempt stops being
+    // counted as live. The provider's own session is left alone — it may still
+    // be reviewed, and applyDecision refuses to move a row that is not PENDING,
+    // so a late decision on it cannot overwrite the new attempt.
+    await prisma.kycVerification.updateMany({
+      where: { id: pending!.id, status: 'PENDING' },
+      data: { status: 'EXPIRED', decidedAt: new Date() },
+    });
+    logger.info(
+      { userId, verificationId: pending!.id },
+      'Retired a stale pending verification so the user can start again',
+    );
   }
 
   // No duplicate check here any more: nothing identifies the document until the

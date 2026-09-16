@@ -53,6 +53,16 @@ export interface KycDecision {
   reference: string;
   providerRef: string;
   status: ProviderStatus;
+  /**
+   * The provider's own status string, unmapped.
+   *
+   * status above is deliberately narrow — anything non-terminal becomes
+   * PENDING. But "In Review" and "In Progress" both land there and mean
+   * opposite things: one is waiting on us, the other on the user. Kept verbatim
+   * so the UI can say which, and so an unfamiliar value from the provider is
+   * still recorded rather than flattened away.
+   */
+  providerStatus?: string | undefined;
   rejectionReason?: string | undefined;
   livenessScore?: number | undefined;
   faceMatchScore?: number | undefined;

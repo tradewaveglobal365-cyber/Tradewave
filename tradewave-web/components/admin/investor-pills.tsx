@@ -2,7 +2,7 @@
  * Status chips shared by the investor list and the investor detail page.
  *
  * Defined once so a status cannot read one way on the list and another way on
- * the page it links to \u2014 the mistake that makes a staff screen untrustworthy.
+ * the page it links to — the mistake that makes a staff screen untrustworthy.
  */
 
 /** Identity verification, which is the status that decides what a user can do. */

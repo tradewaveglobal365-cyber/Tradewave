@@ -68,6 +68,15 @@ adminRouter.get('/investors', async (req: Request, res: Response) => {
   res.json(await investors.listInvestors({ q, page }));
 });
 
+/**
+ * Verifications waiting on a human. Read-only: the decision is taken in the
+ * provider's console, which has the document scan and the selfie this server
+ * deliberately never receives.
+ */
+adminRouter.get('/identity/reviews', async (_req: Request, res: Response) => {
+  res.json({ reviews: await investors.listPendingReviews() });
+});
+
 adminRouter.get('/investors/:id', async (req: Request, res: Response) => {
   res.json({ investor: await investors.getInvestor(id(req)) });
 });

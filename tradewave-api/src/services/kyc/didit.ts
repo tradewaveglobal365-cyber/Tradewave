@@ -245,6 +245,7 @@ export class DiditKycProvider implements KycProvider {
       reference: d.vendor_data,
       providerRef: d.session_id,
       status,
+      providerStatus: d.status,
       rejectionReason:
         status === 'REJECTED'
           ? (firstWarning(d.id_verifications) ??

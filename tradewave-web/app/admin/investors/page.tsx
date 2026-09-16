@@ -7,13 +7,13 @@ import { ADMIN_NAV_ITEMS } from '@/lib/admin-nav';
 import { formatUsd } from '@/lib/money';
 import { KycPill, StatusDot } from '@/components/admin/investor-pills';
 
-export const metadata: Metadata = { title: 'Investors \u00b7 Admin' };
+export const metadata: Metadata = { title: 'Investors · Admin' };
 
 /**
  * Everyone who has signed up.
  *
  * Search and paging are query-string driven and the form is a plain GET, so
- * this whole screen stays a server component \u2014 no client bundle for what is
+ * this whole screen stays a server component — no client bundle for what is
  * fundamentally a list, and a search result is a URL somebody can send to a
  * colleague.
  */
@@ -76,7 +76,7 @@ export default async function InvestorsPage({
       {investors.length === 0 ? (
         <EmptyState
           icon={<Users className="size-5" />}
-          title={q ? `Nobody matches \u201c${q}\u201d` : 'No investors yet'}
+          title={q ? `Nobody matches “${q}”` : 'No investors yet'}
           description={
             q
               ? 'Try a different name or email, or clear the search to see everyone.'
@@ -95,7 +95,7 @@ export default async function InvestorsPage({
         />
       ) : (
         <>
-          {/* Cards below md \u2014 a seven-column table on a phone is either
+          {/* Cards below md — a seven-column table on a phone is either
               unreadable or a horizontal scroll nobody finds. */}
           <ul className="space-y-3 md:hidden">
             {investors.map((i) => (
@@ -146,7 +146,7 @@ export default async function InvestorsPage({
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <p className="text-[0.75rem] text-muted-foreground tabular-nums">
-              {from}\u2013{to} of {total}
+              {from}–{to} of {total}
             </p>
             {lastPage > 1 ? (
               <div className="flex items-center gap-2">
@@ -202,7 +202,7 @@ function Row({ investor: i }: { investor: AdminInvestorRow }) {
         ) : null}
       </td>
       <td className="px-4 py-3 text-right text-[0.75rem] text-muted-foreground">
-        {i.hasPayoutAccount ? 'Added' : '\u2014'}
+        {i.hasPayoutAccount ? 'Added' : '—'}
       </td>
       <td className="px-4 py-3 text-[0.75rem] text-muted-foreground">
         {new Date(i.createdAt).toLocaleDateString('en-GB', {
