@@ -2,14 +2,22 @@ import { Resend } from 'resend';
 import { env } from '../../config/env';
 import { logger } from '../../lib/logger';
 import type {
+  DepositCreditedEmail,
   DuplicateSignupEmail,
   EmailService,
+  InvestmentConfirmedEmail,
+  KycDecidedEmail,
   PasswordResetEmail,
+  PayoutAccountChangedEmail,
   VerificationEmail,
 } from './types';
 import {
+  depositCreditedTemplate,
   duplicateSignupTemplate,
+  investmentConfirmedTemplate,
+  kycDecidedTemplate,
   passwordResetTemplate,
+  payoutAccountChangedTemplate,
   verificationTemplate,
 } from './templates';
 
@@ -37,6 +45,31 @@ class ConsoleEmailService implements EmailService {
 
   async sendDuplicateSignupNotice({ to, loginUrl }: DuplicateSignupEmail): Promise<void> {
     this.print('duplicate-signup', to, loginUrl);
+  }
+
+  // The four below carry no link worth clicking in development, so they log a
+  // one-line summary instead — enough to see that the trigger fired.
+  async sendKycDecided({ to, approved, adoptedName }: KycDecidedEmail): Promise<void> {
+    logger.info({ to, approved, adoptedName }, '[email:kyc-decided]');
+  }
+
+  async sendDepositCredited({ to, amountCredited }: DepositCreditedEmail): Promise<void> {
+    logger.info({ to, amountCredited }, '[email:deposit-credited]');
+  }
+
+  async sendInvestmentConfirmed({
+    to,
+    propertyTitle,
+    amount,
+  }: InvestmentConfirmedEmail): Promise<void> {
+    logger.info({ to, propertyTitle, amount }, '[email:investment-confirmed]');
+  }
+
+  async sendPayoutAccountChanged({
+    to,
+    accountNumberMasked,
+  }: PayoutAccountChangedEmail): Promise<void> {
+    logger.info({ to, accountNumberMasked }, '[email:payout-account-changed]');
   }
 }
 
@@ -79,6 +112,76 @@ class ResendEmailService implements EmailService {
     resetUrl,
   }: DuplicateSignupEmail): Promise<void> {
     const t = duplicateSignupTemplate(firstName, loginUrl, resetUrl);
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendKycDecided({
+    to,
+    firstName,
+    approved,
+    reason,
+    adoptedName,
+    url,
+  }: KycDecidedEmail): Promise<void> {
+    const t = kycDecidedTemplate(firstName, approved, url, reason, adoptedName);
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendDepositCredited({
+    to,
+    firstName,
+    amountReceived,
+    amountCredited,
+    newBalance,
+    url,
+  }: DepositCreditedEmail): Promise<void> {
+    const t = depositCreditedTemplate(
+      firstName,
+      amountReceived,
+      amountCredited,
+      newBalance,
+      url,
+    );
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendInvestmentConfirmed({
+    to,
+    firstName,
+    propertyTitle,
+    amount,
+    annualReturn,
+    termMonths,
+    maturesOn,
+    url,
+  }: InvestmentConfirmedEmail): Promise<void> {
+    const t = investmentConfirmedTemplate(
+      firstName,
+      propertyTitle,
+      amount,
+      annualReturn,
+      termMonths,
+      maturesOn,
+      url,
+    );
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendPayoutAccountChanged({
+    to,
+    firstName,
+    bankName,
+    accountNumberMasked,
+    accountName,
+    url,
+  }: PayoutAccountChangedEmail): Promise<void> {
+    const t = payoutAccountChangedTemplate(
+      firstName,
+      bankName,
+      accountNumberMasked,
+      accountName,
+      url,
+    );
     await this.send(to, t.subject, t.html, t.text);
   }
 }

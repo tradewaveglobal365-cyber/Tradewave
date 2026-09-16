@@ -73,6 +73,16 @@ export interface KycDecision {
    */
   documentNumber?: string | undefined;
   documentType?: DocumentType | undefined;
+  /**
+   * The name printed on the document the provider verified.
+   *
+   * This becomes the user's name on a VERIFIED decision. The name someone typed
+   * at signup is a claim; this one has been read off an authenticated document,
+   * and it is the name their bank will hold — which is what the payout check
+   * has to agree with.
+   */
+  firstName?: string | undefined;
+  lastName?: string | undefined;
 }
 
 export interface KycProvider {

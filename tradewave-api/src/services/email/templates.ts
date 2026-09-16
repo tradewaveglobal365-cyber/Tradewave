@@ -87,6 +87,138 @@ export function duplicateSignupTemplate(firstName: string, loginUrl: string, res
   };
 }
 
+/** A labelled figure table, used by the emails that report on money. */
+function rows(pairs: [string, string][]): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 0;border:1px solid #E5E2DA;border-radius:8px;overflow:hidden;">
+    ${pairs
+      .map(
+        ([label, value], i) => `<tr style="${i > 0 ? 'border-top:1px solid #E5E2DA;' : ''}">
+          <td style="padding:10px 14px;font-size:13px;color:#5C6660;">${escapeHtml(label)}</td>
+          <td align="right" style="padding:10px 14px;font-size:14px;font-weight:600;color:#0E1512;">${escapeHtml(value)}</td>
+        </tr>`,
+      )
+      .join('')}
+  </table>`;
+}
+
+export function kycDecidedTemplate(
+  firstName: string,
+  approved: boolean,
+  url: string,
+  reason?: string,
+  adoptedName?: string,
+) {
+  if (approved) {
+    return {
+      subject: 'Your identity is verified',
+      html: shell(
+        `You're verified, ${escapeHtml(firstName)}`,
+        `<p style="margin:0;">Your identity check has been approved. You can now fund your wallet and invest.</p>
+         ${
+           adoptedName
+             ? `<p style="margin:12px 0 0;">We've set your name to <strong style="color:#0E1512;">${escapeHtml(adoptedName)}</strong> to match the document you verified with. Payouts can only be sent to a bank account in that name, so it needs to be the one your bank holds.</p>`
+             : ''
+         }`,
+        { label: 'Go to your dashboard', url },
+      ),
+      text: approvedText(firstName, url, adoptedName),
+    };
+  }
+
+  return {
+    subject: 'We could not verify your identity',
+    html: shell(
+      'Your identity check did not pass',
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, we could not verify the document you submitted.</p>
+       ${reason ? `<p style="margin:12px 0 0;color:#0E1512;">${escapeHtml(reason)}</p>` : ''}
+       <p style="margin:12px 0 0;">You can try again with a clearer photograph, or a different document. Make sure the whole document is in frame, in focus, and not expired.</p>`,
+      { label: 'Try again', url },
+    ),
+    text: `Hi ${firstName}, we could not verify your identity.${reason ? `\n\n${reason}` : ''}\n\nTry again: ${url}`,
+  };
+}
+
+function approvedText(firstName: string, url: string, adoptedName?: string): string {
+  const name = adoptedName
+    ? `\n\nWe've set your name to ${adoptedName} to match the document you verified with. Payouts can only be sent to a bank account in that name.`
+    : '';
+  return `You're verified, ${firstName}. You can now fund your wallet and invest.${name}\n\n${url}`;
+}
+
+export function depositCreditedTemplate(
+  firstName: string,
+  amountReceived: string,
+  amountCredited: string,
+  newBalance: string,
+  url: string,
+) {
+  return {
+    subject: `${amountCredited} added to your wallet`,
+    html: shell(
+      'Your deposit has landed',
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, we received your transfer and converted it at the published rate.</p>
+       ${rows([
+         ['Received', amountReceived],
+         ['Credited', amountCredited],
+         ['Wallet balance', newBalance],
+       ])}`,
+      { label: 'View your wallet', url },
+    ),
+    text: `Hi ${firstName}, your deposit has landed.\n\nReceived: ${amountReceived}\nCredited: ${amountCredited}\nWallet balance: ${newBalance}\n\n${url}`,
+  };
+}
+
+export function investmentConfirmedTemplate(
+  firstName: string,
+  propertyTitle: string,
+  amount: string,
+  annualReturn: string,
+  termMonths: number,
+  maturesOn: string,
+  url: string,
+) {
+  return {
+    subject: `You've invested ${amount} in ${propertyTitle}`,
+    html: shell(
+      'Your investment is confirmed',
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, here are the terms, fixed at the moment you invested. Later changes to the listing do not affect them.</p>
+       ${rows([
+         ['Property', propertyTitle],
+         ['Amount', amount],
+         ['Annual return', annualReturn],
+         ['Term', `${termMonths} months`],
+         ['Matures', maturesOn],
+       ])}`,
+      { label: 'View your portfolio', url },
+    ),
+    text: `Hi ${firstName}, your investment is confirmed.\n\nProperty: ${propertyTitle}\nAmount: ${amount}\nAnnual return: ${annualReturn}\nTerm: ${termMonths} months\nMatures: ${maturesOn}\n\n${url}`,
+  };
+}
+
+export function payoutAccountChangedTemplate(
+  firstName: string,
+  bankName: string,
+  accountNumberMasked: string,
+  accountName: string,
+  url: string,
+) {
+  return {
+    subject: 'Your payout account was changed',
+    html: shell(
+      'Your payout account was changed',
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, the bank account your Tradewave withdrawals and returns are sent to has been set to:</p>
+       ${rows([
+         ['Bank', bankName],
+         ['Account', accountNumberMasked],
+         ['Name', accountName],
+       ])}
+       <p style="margin:20px 0 0;color:#0E1512;"><strong>If you did not do this, contact us immediately and change your password.</strong> Someone with access to your account could redirect your money.</p>`,
+      { label: 'Review your settings', url },
+    ),
+    text: `Hi ${firstName}, your Tradewave payout account was changed to:\n\nBank: ${bankName}\nAccount: ${accountNumberMasked}\nName: ${accountName}\n\nIf you did not do this, contact us immediately and change your password.\n\n${url}`,
+  };
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,

@@ -3,6 +3,8 @@ import { logger } from '../../lib/logger';
 import { validationFailed } from '../../lib/errors';
 import { namesMatch } from '../../lib/name-match';
 import { paymentProvider } from '../../services/payments';
+import { emailService } from '../../services/email';
+import { env } from '../../config/env';
 import type { Bank } from '../../services/payments/types';
 
 /**
@@ -130,6 +132,26 @@ export async function setPayoutAccount(
   });
 
   logger.info({ userId, bankCode: bank.code, nameResolved: row.nameResolved }, 'Payout account set');
+
+  // A security notice, not a receipt. Changing where money is sent is the move
+  // an attacker makes with a stolen session, so the account owner is told every
+  // time — the point is to reach the real person when it was not them.
+  try {
+    const account = await prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+    await emailService.sendPayoutAccountChanged({
+      to: account.email,
+      firstName: account.firstName,
+      bankName: row.bankName,
+      accountNumberMasked: mask(row.accountNumber),
+      accountName: row.accountName,
+      url: `${env.WEB_ORIGIN}/settings/payout-account`,
+    });
+  } catch (err) {
+    logger.error({ err, userId }, 'Could not send the payout account change email');
+  }
 
   return {
     bankCode: row.bankCode,

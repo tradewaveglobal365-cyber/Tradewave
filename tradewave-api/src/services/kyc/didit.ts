@@ -49,6 +49,8 @@ interface DiditFeature {
   document_type?: string;
   document_number?: string;
   personal_number?: string;
+  first_name?: string;
+  last_name?: string;
   warnings?: { short_description?: string; long_description?: string }[];
 }
 
@@ -259,6 +261,11 @@ export class DiditKycProvider implements KycProvider {
       // number worth deduping on. document_number is the booklet/card serial.
       documentNumber: idv?.personal_number ?? idv?.document_number,
       documentType: mapDocumentType(idv?.document_type),
+      // Taken verbatim. Didit already returns these in sentence case; nothing
+      // here re-cases them, because guessing at capitalisation is how "McDonald"
+      // becomes "Mcdonald" and a person's name is not a place to guess.
+      firstName: idv?.first_name?.trim() || undefined,
+      lastName: idv?.last_name?.trim() || undefined,
     };
   }
 }

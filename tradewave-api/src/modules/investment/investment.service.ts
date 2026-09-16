@@ -3,6 +3,9 @@ import { prisma } from '../../lib/prisma';
 import { computeAccrual, addMonths } from './accrual';
 import { formatUsd } from '../../lib/money';
 import { generateToken } from '../../lib/crypto';
+import { env } from '../../config/env';
+import { logger } from '../../lib/logger';
+import { emailService } from '../../services/email';
 import {
   belowMinimumInvestment,
   insufficientFunds,
@@ -143,7 +146,7 @@ export async function createInvestment(
     create: { userId },
   });
 
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     // ── 1. Debit the wallet, atomically ──────────────────────────────────
     // The balance filter sits in WHERE, so a concurrent request that already
     // spent the money finds no matching row and throws P2025.
@@ -211,4 +214,34 @@ export async function createInvestment(
 
     return { investment, balanceAfterCents: debited.balanceCents };
   });
+
+  // After the commit, never inside it: an email provider being slow must not
+  // hold a transaction that has a wallet and a property allocation locked, and
+  // a failure here must not roll back an investment the user has paid for.
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+    if (user) {
+      await emailService.sendInvestmentConfirmed({
+        to: user.email,
+        firstName: user.firstName,
+        propertyTitle: property.title,
+        amount: formatUsd(amountCents),
+        annualReturn: `${(property.annualReturnBps / 100).toFixed(2)}%`,
+        termMonths: property.termMonths,
+        maturesOn: result.investment.maturesAt.toLocaleDateString('en-GB', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        }),
+        url: `${env.WEB_ORIGIN}/portfolio`,
+      });
+    }
+  } catch (err) {
+    logger.error({ err, userId }, 'Could not send the investment confirmation email');
+  }
+
+  return result;
 }

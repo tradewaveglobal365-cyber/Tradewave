@@ -5,6 +5,7 @@ import { hashIdentifier } from '../../lib/crypto';
 import { logger } from '../../lib/logger';
 import { tooManyRequests } from '../../lib/errors';
 import { kycProvider } from '../../services/kyc';
+import { emailService } from '../../services/email';
 import type { KycDecision } from '../../services/kyc/types';
 
 /**
@@ -153,6 +154,16 @@ export async function applyDecision(decision: KycDecision): Promise<void> {
     }
   }
 
+  // Read before the write, so the notification can say whether the name moved.
+  const before = await prisma.user.findUnique({
+    where: { id: row.userId },
+    select: { firstName: true, lastName: true, email: true },
+  });
+  const nameChanged =
+    status === 'VERIFIED' &&
+    Boolean(decision.firstName && decision.lastName) &&
+    (before?.firstName !== decision.firstName || before?.lastName !== decision.lastName);
+
   await prisma.$transaction(async (tx) => {
     // Conditional update rather than read-then-write: only ever transitions OUT
     // of PENDING, so a replayed webhook updates zero rows and does nothing.
@@ -184,11 +195,55 @@ export async function applyDecision(decision: KycDecision): Promise<void> {
       data: {
         kycStatus: status,
         ...(status === 'VERIFIED' ? { kycVerifiedAt: new Date() } : {}),
+        // The document's name wins.
+        //
+        // What someone typed at signup is a claim. What the provider read off
+        // an authenticated document is their legal identity, and it is the name
+        // their bank holds — which is the name setPayoutAccount has to agree
+        // with. Leaving the typed one in place is what stranded an investor who
+        // registered as "Moses Solomon" and verified a licence reading "Moses
+        // Ateghie": his own bank account could never match his own profile, and
+        // the name lock meant he could not correct either.
+        ...(status === 'VERIFIED' && decision.firstName && decision.lastName
+          ? { firstName: decision.firstName, lastName: decision.lastName }
+          : {}),
       },
     });
   });
 
   logger.info({ verificationId: row.id, status }, 'KYC decision applied');
+
+  if (status === 'VERIFIED' && nameChanged) {
+    logger.info(
+      { userId: row.userId, verificationId: row.id },
+      'Adopted the verified document name over the one given at signup',
+    );
+  }
+
+  // Didit does not notify users itself (send_notification_emails is false on
+  // the session), so a decision reaches the investor only if we send it. Awaited
+  // but never allowed to throw: a failed email must not undo an applied
+  // decision, and this function is called from a webhook that answers 200.
+  if (before && (status === 'VERIFIED' || status === 'REJECTED')) {
+    try {
+      await emailService.sendKycDecided({
+        to: before.email,
+        firstName: decision.firstName ?? before.firstName,
+        approved: status === 'VERIFIED',
+        reason: status === 'REJECTED' ? (reason ?? undefined) : undefined,
+        adoptedName:
+          nameChanged && decision.firstName && decision.lastName
+            ? `${decision.firstName} ${decision.lastName}`
+            : undefined,
+        url:
+          status === 'VERIFIED'
+            ? `${env.WEB_ORIGIN}/dashboard`
+            : `${env.WEB_ORIGIN}/verify-identity`,
+      });
+    } catch (err) {
+      logger.error({ err, userId: row.userId }, 'Could not send the KYC decision email');
+    }
+  }
 }
 
 /**

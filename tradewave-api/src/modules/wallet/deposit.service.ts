@@ -2,7 +2,9 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { logger } from '../../lib/logger';
 import { depositsUnavailable } from '../../lib/errors';
-import { koboFromUsdCents, usdCentsFromKobo } from '../../lib/money';
+import { formatNgn, formatUsd, koboFromUsdCents, usdCentsFromKobo } from '../../lib/money';
+import { env } from '../../config/env';
+import { emailService } from '../../services/email';
 import { paymentProvider } from '../../services/payments';
 import type { ConfirmedPayment } from '../../services/payments/types';
 import { getCurrentRate } from '../fx/fx.service';
@@ -161,6 +163,8 @@ export async function applyPayment(payment: ConfirmedPayment): Promise<void> {
     create: { userId },
   });
 
+  let balanceAfter = 0n;
+
   try {
     await prisma.$transaction(async (tx) => {
       const credited = await tx.wallet.update({
@@ -203,6 +207,8 @@ export async function applyPayment(payment: ConfirmedPayment): Promise<void> {
           depositId: deposit.id,
         },
       });
+
+      balanceAfter = credited.balanceCents;
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -216,6 +222,31 @@ export async function applyPayment(payment: ConfirmedPayment): Promise<void> {
     { userId, providerRef: payment.providerRef, amountCents: amountCents.toString() },
     'Deposit credited',
   );
+
+  // Sent only after the transaction commits, and only on the path that actually
+  // credited. The P2002 branch above returns before this, so a replayed webhook
+  // cannot tell somebody twice that their money arrived.
+  //
+  // Never allowed to throw: this runs under a webhook that must answer 200, and
+  // an unsent email is a smaller problem than a provider retrying a credit.
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+    if (user) {
+      await emailService.sendDepositCredited({
+        to: user.email,
+        firstName: user.firstName,
+        amountReceived: formatNgn(payment.amountMinor),
+        amountCredited: formatUsd(amountCents),
+        newBalance: formatUsd(balanceAfter),
+        url: `${env.WEB_ORIGIN}/wallet`,
+      });
+    }
+  } catch (err) {
+    logger.error({ err, userId }, 'Could not send the deposit email');
+  }
 }
 
 /** Records a receipt we cannot yet convert, so the sweep can finish it later. */
