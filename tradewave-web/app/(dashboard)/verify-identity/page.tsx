@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { BadgeCheck, Clock, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Clock, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { getCurrentUser } from '@/lib/session';
 import { getKycStatus } from '@/lib/kyc';
 import { PageHeader } from '@/components/dashboard/page-header';
@@ -19,40 +18,29 @@ export default async function VerifyIdentityPage() {
   // fall back to the most restrictive state.
   const status = kyc?.status ?? user.kycStatus ?? 'NOT_STARTED';
 
+  // Nobody who has already verified should ever see this page. It exists to
+  // ask for something; once it has been given there is nothing here but a
+  // status, and a status belongs in Settings. Someone finishing verification
+  // lands on Settings with the Identity card already reading "Identity
+  // verified", which is the confirmation they came back for.
+  if (status === 'VERIFIED') redirect('/settings');
+
   return (
     <div>
-      {/* The heading follows the status. It used to be fixed, so a verified
-          investor landing here read "Verify your identity — photograph an ID,
-          take a selfie" directly above a card telling them they were already
-          verified. The page contradicted itself. */}
+      {/* Follows the status. A verified user never reaches this page at all. */}
       <PageHeader
-        title={status === 'VERIFIED' ? 'Identity' : 'Verify your identity'}
+        title="Verify your identity"
         description={
-          status === 'VERIFIED'
-            ? 'Confirmed. There is nothing else to do here.'
-            : status === 'PENDING'
-              ? 'Your details are with our verification partner.'
-              : 'Required before you can invest. Photograph an ID, take a selfie — about a minute.'
+          status === 'PENDING'
+            ? 'Your details are with our verification partner.'
+            : 'Required before you can invest. Photograph an ID, take a selfie — about a minute.'
         }
       />
 
       <div className="max-w-xl">
-        {status === 'VERIFIED' ? (
-          <Panel
-            tone="ok"
-            icon={BadgeCheck}
-            title="Your identity is verified"
-            body={
-              kyc?.documentLast4
-                ? `Confirmed against the document ending ${kyc.documentLast4}.`
-                : 'You can now invest in any open property.'
-            }
-          >
-            <Button asChild className="h-11 md:h-10">
-              <Link href="/properties">Browse properties</Link>
-            </Button>
-          </Panel>
-        ) : status === 'PENDING' ? (
+        {/* No VERIFIED branch: that status redirects to Settings above, so
+            rendering one here would be a state this page can never reach. */}
+        {status === 'PENDING' ? (
           <Panel
             tone="wait"
             icon={Clock}

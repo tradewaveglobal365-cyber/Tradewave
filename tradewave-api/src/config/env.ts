@@ -47,7 +47,14 @@ const envSchema = z.object({
   // machine credential, which is Klasha's design and not a good one: these are
   // dashboard login credentials sitting in deployment config. Ask them for a
   // scoped API credential before this goes anywhere near real money.
-  KLASHA_BASE_URL: z.string().default('https://dev.kcookery.com'),
+  // Host only — every path in the Klasha driver is absolute from the root, so a
+  // base URL carrying a path silently prefixes all of them. Trailing slashes
+  // are stripped because '.../' + '/auth/...' produces a double slash that some
+  // gateways 404 rather than normalise.
+  KLASHA_BASE_URL: z
+    .string()
+    .default('https://dev.kcookery.com')
+    .transform((v) => v.trim().replace(/\/+$/, '')),
   KLASHA_PUBLIC_KEY: z.string().default(''),
   KLASHA_ENCRYPTION_KEY: z.string().default(''),
   KLASHA_ACCOUNT_EMAIL: z.string().default(''),
@@ -102,6 +109,32 @@ const parsed = envSchema
           'KLASHA_PUBLIC_KEY, KLASHA_ENCRYPTION_KEY, KLASHA_ACCOUNT_EMAIL and KLASHA_ACCOUNT_PASSWORD must all be set together, or all left empty',
       });
     }
+    // A base URL with a path is the misconfiguration that produces total,
+    // silent Klasha failure: the token call 404s, so every call fails, so the
+    // deposit account is never issued and the bank list comes back empty. It
+    // cost a production debugging session once. The live host is
+    // https://gate.klasapps.com — '/pay' is part of one specific endpoint's
+    // path in their docs, not part of the base.
+    if (cfg.KLASHA_BASE_URL) {
+      let path = '';
+      try {
+        path = new URL(cfg.KLASHA_BASE_URL).pathname;
+      } catch {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['KLASHA_BASE_URL'],
+          message: `KLASHA_BASE_URL is not a valid URL: ${cfg.KLASHA_BASE_URL}`,
+        });
+      }
+      if (path && path !== '/') {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['KLASHA_BASE_URL'],
+          message: `KLASHA_BASE_URL must be a host with no path, got a path of "${path}". Every Klasha endpoint is absolute from the root, so this prefixes all of them and nothing works. Use https://gate.klasapps.com (live) or https://dev.kcookery.com (sandbox).`,
+        });
+      }
+    }
+
     if (cfg.KLASHA_ENCRYPTION_KEY && Buffer.byteLength(cfg.KLASHA_ENCRYPTION_KEY) !== 24) {
       ctx.addIssue({
         code: 'custom',
