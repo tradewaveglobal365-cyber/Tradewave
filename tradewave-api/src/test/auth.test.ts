@@ -225,6 +225,14 @@ describe('refresh token rotation', () => {
     const current = readCookie(rotated, 'tw_refresh')!;
     expect(current).not.toBe(stolen);
 
+    // Past the grace window, so this is a replay rather than a second tab.
+    // Backdated in the database instead of faking timers: the production code
+    // reads Date.now() in one place and the clock is not what is under test.
+    await prisma.session.updateMany({
+      where: { revokedAt: { not: null } },
+      data: { revokedAt: new Date(Date.now() - 60_000) },
+    });
+
     // Attacker replays the captured token.
     const replay = await request(app)
       .post('/api/v1/auth/refresh')
@@ -241,6 +249,67 @@ describe('refresh token rotation', () => {
 
     const active = await prisma.session.count({ where: { revokedAt: null } });
     expect(active).toBe(0);
+  });
+
+  /**
+   * The case that used to sign people out: two tabs, both refreshing after the
+   * access token expired, the slower one presenting a token the faster one has
+   * already rotated. That is a race, not a theft, and it must not end the
+   * session.
+   */
+  it('tolerates a concurrent refresh inside the grace window', async () => {
+    await registerUser('race@example.com');
+    const verified = await request(app)
+      .post('/api/v1/auth/verify-email')
+      .set('Origin', ORIGIN)
+      .send({ token: tokenFromUrl(sent.verify[0]!) });
+
+    const shared = readCookie(verified, 'tw_refresh')!;
+
+    const first = await request(app)
+      .post('/api/v1/auth/refresh')
+      .set('Origin', ORIGIN)
+      .set('Cookie', `tw_refresh=${shared}`)
+      .expect(200);
+
+    // Second tab, same starting token, no backdating — inside the window.
+    const second = await request(app)
+      .post('/api/v1/auth/refresh')
+      .set('Origin', ORIGIN)
+      .set('Cookie', `tw_refresh=${shared}`)
+      .expect(200);
+
+    // Each got its own token, and the session survived.
+    const a = readCookie(first, 'tw_refresh')!;
+    const b = readCookie(second, 'tw_refresh')!;
+    expect(a).not.toBe(shared);
+    expect(b).not.toBe(shared);
+    expect(a).not.toBe(b);
+    expect(await prisma.session.count({ where: { revokedAt: null } })).toBeGreaterThan(0);
+
+    // And the newest token still works, which is what the user experiences.
+    await request(app)
+      .post('/api/v1/auth/refresh')
+      .set('Origin', ORIGIN)
+      .set('Cookie', `tw_refresh=${b}`)
+      .expect(200);
+  });
+
+  it('sends the refresh cookie site-wide so middleware can see it', async () => {
+    // Scoped to /api/v1/auth it was invisible to Next middleware on /dashboard,
+    // which is the only place able to set a fresh cookie — so nothing ever
+    // refreshed. Path is load-bearing, not cosmetic.
+    await registerUser('path@example.com');
+    const verified = await request(app)
+      .post('/api/v1/auth/verify-email')
+      .set('Origin', ORIGIN)
+      .send({ token: tokenFromUrl(sent.verify[0]!) });
+
+    const header = verified.headers['set-cookie'] as unknown as string[];
+    const refresh = header.find((c) => c.startsWith('tw_refresh='))!;
+    expect(refresh).toMatch(/Path=\/(;|$)/);
+    expect(refresh).toMatch(/HttpOnly/i);
+    expect(refresh).toMatch(/SameSite=Lax/i);
   });
 
   it('rejects an unknown refresh token', async () => {
