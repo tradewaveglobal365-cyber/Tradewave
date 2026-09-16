@@ -79,10 +79,10 @@ export async function setPayoutAccount(
     throw validationFailed({ bankCode: 'Choose a bank from the list.' });
   }
 
-  // Ask the bank who owns this account. When the provider can tell us, ITS
-  // answer is what gets checked — the user's typing is then irrelevant, which is
-  // the whole point. Klasha returns null today, so the typed name is the
-  // fallback and the row records that nobody independent confirmed it.
+  // Ask the bank who owns this account. When the provider answers, ITS name is
+  // what gets checked and the user's typing is irrelevant — which is the whole
+  // point. A null answer (unknown account number, or the stub driver) falls back
+  // to the typed name, and the row records that nobody independent confirmed it.
   const resolved = await paymentProvider
     .resolveAccountName(input.bankCode, input.accountNumber)
     .catch((err: unknown) => {

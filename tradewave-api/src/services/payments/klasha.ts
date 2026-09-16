@@ -244,16 +244,39 @@ export class KlashaPaymentProvider implements PaymentProvider {
   }
 
   /**
-   * Not implemented, deliberately.
+   * Asks the bank who owns an account — the NIBSS name enquiry every Nigerian
+   * transfer screen does before you confirm.
    *
-   * Klasha's payout documentation references a "Resolve account number"
-   * endpoint and then says it is in their Postman collection rather than giving
-   * a path. Guessing at it would either 404 on every save or, worse, hit
-   * something else. Returning null makes the caller fall back to matching the
-   * name the user typed, and record on the row that nobody confirmed it.
+   * This is what turns the payout name check from "the name you typed matches
+   * your identity" into "the BANK says this account is yours". See
+   * payout.service: when this returns a name, the user's typing is ignored.
+   *
+   * Plain JSON, unlike the payout body on the same page, which is 3DES
+   * encrypted. Their docs are explicit about that split, and it is the kind of
+   * inconsistency worth stating rather than discovering.
    */
-  async resolveAccountName(): Promise<string | null> {
-    return null;
+  async resolveAccountName(
+    bankCode: string,
+    accountNumber: string,
+  ): Promise<string | null> {
+    try {
+      const body = await this.request<{ data?: { account_name?: string } }>(
+        '/wallet/merchant/bank/transfer/request/resolve/account',
+        {
+          method: 'POST',
+          // countryCode is fixed: this driver resolves NGN accounts, which is
+          // the only currency Tradewave pays out in.
+          body: JSON.stringify({ bankCode, countryCode: 'NG', accountNumber }),
+        },
+      );
+      const name = body.data?.account_name?.trim();
+      return name && name.length > 0 ? name : null;
+    } catch (err) {
+      // A wrong account number is an ordinary outcome here, not an incident —
+      // the caller falls back to the typed name rather than refusing the save.
+      logger.info({ bankCode, err }, 'Klasha could not resolve that account');
+      return null;
+    }
   }
 
   async listRecentPayments(limit: number): Promise<ConfirmedPayment[]> {

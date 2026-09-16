@@ -358,10 +358,10 @@ model PayoutAccount {
   accountNumber String
   accountName   String
 
-  // Whether the name was confirmed by the BANK or merely asserted by the user.
-  // Klasha's resolve endpoint is not in their public docs yet, so every row is
-  // false today — and this is how you tell which accounts were only self-declared
-  // once it is switched on.
+  // Whether the name was confirmed by the BANK (NIBSS name enquiry) or merely
+  // asserted by the user. False when the provider could not answer — an unknown
+  // account number, or the stub driver — so this is how you tell which accounts
+  // were taken on trust.
   nameResolved Boolean @default(false)
 
   createdAt DateTime @default(now())

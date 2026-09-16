@@ -116,6 +116,52 @@ describe('webhook reference extraction', () => {
   });
 });
 
+describe('resolving a bank account', () => {
+  const klasha = new KlashaPaymentProvider('https://example.test', 'pk', KEY_24, 'a@b.c', 'pw');
+
+  /** Stands in for login + the resolve call, in that order. */
+  function mockFetch(resolveResponse: { ok: boolean; body: unknown }) {
+    return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/auth/account/v2/login')) {
+        return new Response(JSON.stringify({ data: { token: 'tok' } }), { status: 200 });
+      }
+      return new Response(JSON.stringify(resolveResponse.body), {
+        status: resolveResponse.ok ? 200 : 400,
+      });
+    });
+  }
+
+  it('returns the name the bank holds', async () => {
+    mockFetch({ ok: true, body: { data: { account_number: '9067777000', account_name: 'JOHN JANE DOE' } } });
+    await expect(klasha.resolveAccountName('044', '9067777000')).resolves.toBe('JOHN JANE DOE');
+  });
+
+  it('sends plain JSON, not an encrypted envelope', async () => {
+    // The payout body on the same documentation page IS 3DES encrypted and this
+    // one is not. Getting that backwards fails with a generic provider error.
+    const spy = mockFetch({ ok: true, body: { data: { account_name: 'JOHN DOE' } } });
+    await klasha.resolveAccountName('044', '9067777000');
+
+    const call = spy.mock.calls.find(([url]) => String(url).includes('resolve/account'));
+    const sent = JSON.parse(String((call?.[1] as RequestInit).body));
+    expect(sent).toEqual({ bankCode: '044', countryCode: 'NG', accountNumber: '9067777000' });
+    expect(sent).not.toHaveProperty('message');
+  });
+
+  it('returns null for an account the bank does not know', async () => {
+    // An ordinary outcome, not an incident: the caller falls back to the typed
+    // name rather than refusing the save outright.
+    mockFetch({ ok: false, body: { message: 'Account not found' } });
+    await expect(klasha.resolveAccountName('044', '0000000000')).resolves.toBeNull();
+  });
+
+  it('returns null rather than an empty string when the name is blank', async () => {
+    mockFetch({ ok: true, body: { data: { account_name: '   ' } } });
+    await expect(klasha.resolveAccountName('044', '9067777000')).resolves.toBeNull();
+  });
+});
+
 describe('the deposit webhook', () => {
   it('credits nothing from the body alone — the amount is never read from it', async () => {
     const { agent, userId } = await createVerifiedUser('forge@example.com');

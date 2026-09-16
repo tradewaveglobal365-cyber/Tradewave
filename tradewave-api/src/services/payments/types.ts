@@ -103,13 +103,13 @@ export interface PaymentProvider {
 
   /**
    * Asks the bank who owns an account, for checking it against the verified
-   * identity. Returns null when the provider cannot tell us.
+   * identity — the NIBSS name enquiry every Nigerian transfer screen runs
+   * before you confirm.
    *
-   * Null is the honest answer today: Klasha references a "Resolve account
-   * number" endpoint but does not publish its path, so the caller falls back to
-   * matching the name the USER typed — a weaker check, recorded as such on the
-   * row. When this starts returning a name, the control tightens with no change
-   * outside the driver.
+   * Returns null when the provider cannot answer: an unknown account number, or
+   * a driver with no remote side. The caller then falls back to matching the
+   * name the USER typed, which is a materially weaker check and is recorded as
+   * such on the row.
    */
   resolveAccountName(bankCode: string, accountNumber: string): Promise<string | null>;
 
