@@ -15,6 +15,17 @@ import type { ApiErrorBody } from './types';
 const BROWSER_API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4001/api/v1';
 
+/**
+ * The base a BROWSER should use, even when asked from the server.
+ *
+ * API_URL below resolves per-runtime, which is right for fetches and wrong for
+ * an href: a link rendered by a Server Component is followed by the browser, so
+ * baking the server's own base into it would point the user at an origin their
+ * machine may not be able to reach. Document downloads are plain links — see
+ * the documents page — so they need this rather than API_URL.
+ */
+export const browserApiUrl = BROWSER_API_URL;
+
 const SERVER_API_URL = process.env.API_ORIGIN
   ? `${process.env.API_ORIGIN}/api/v1`
   : BROWSER_API_URL;
