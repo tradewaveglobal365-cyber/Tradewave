@@ -72,6 +72,12 @@ export interface ReferralSummary {
   shareUrl: string;
   totalReferrals: number;
   verifiedReferrals: number;
+  /** Invitees who have actually invested — the ones who earned anything. */
+  investedReferrals: number;
+  /** Total earned, in cents. Summed from the ledger, never stored. */
+  earnedCents: string;
+  /** Basis points of each invitee's first investment. 100 = 1%. */
+  bonusBps: number;
 }
 
 export interface ReferralListItem {

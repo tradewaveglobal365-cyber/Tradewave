@@ -6,6 +6,7 @@ import { generateToken } from '../../lib/crypto';
 import { env } from '../../config/env';
 import { logger } from '../../lib/logger';
 import { emailService } from '../../services/email';
+import { creditReferralBonus, notifyReferralBonus } from '../referral/referral.service';
 import {
   belowMinimumInvestment,
   insufficientFunds,
@@ -206,14 +207,34 @@ export async function createInvestment(
       },
     });
 
+    // Pay whoever invited them, if this is their first investment. Inside this
+    // transaction on purpose: a bonus credited against an investment that then
+    // rolled back would be money invented from nothing.
+    const referralBonus = await creditReferralBonus(tx, {
+      investorId: userId,
+      investmentId: investment.id,
+      principalCents: amountCents,
+    });
+
     // Close the property once it is fully subscribed.
     const fresh = await tx.property.findUniqueOrThrow({ where: { id: propertyId } });
     if (fresh.fundedCents >= fresh.totalValueCents && fresh.status === 'OPEN') {
       await tx.property.update({ where: { id: propertyId }, data: { status: 'FUNDED' } });
     }
 
-    return { investment, balanceAfterCents: debited.balanceCents };
+    return { investment, balanceAfterCents: debited.balanceCents, referralBonus };
   });
+
+  // Whoever invited them earned something. After the commit, for the same
+  // reason as the confirmation below — and it swallows its own failures, so a
+  // bounced email cannot undo a bonus that is already in somebody's wallet.
+  if (result.referralBonus) {
+    await notifyReferralBonus({
+      referrerId: result.referralBonus.referrerId,
+      investorId: userId,
+      bonusCents: result.referralBonus.bonusCents,
+    });
+  }
 
   // After the commit, never inside it: an email provider being slow must not
   // hold a transaction that has a wallet and a property allocation locked, and

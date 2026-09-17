@@ -195,3 +195,244 @@ describe('maskEmail', () => {
     expect(maskEmail('a@x.co')).toBe('a***@x.co');
   });
 });
+
+// ── Earning ──────────────────────────────────────────────────────────────────
+
+/**
+ * The referrer is paid 1% of what the person they invited invests, once, on
+ * that person's first investment, credited in the same transaction.
+ *
+ * The assertions that matter are the ones about the SECOND investment and the
+ * rollback: paying twice, or paying for an investment that did not happen, are
+ * both money invented from nothing.
+ */
+describe('referral earnings', () => {
+  async function property() {
+    return prisma.property.create({
+      data: {
+        slug: `ref-${Math.random().toString(36).slice(2, 10)}`,
+        title: 'Referral Tower',
+        summary: 's',
+        description: 'd',
+        addressLine: 'a',
+        area: 'Downtown Dubai',
+        city: 'Dubai',
+        images: [],
+        totalValueCents: 100_000_000n,
+        minInvestmentCents: 100_000n, // $1,000
+        annualReturnBps: 800,
+        termMonths: 24,
+        status: 'OPEN',
+      },
+    });
+  }
+
+  /** A verified investor with a funded wallet, optionally invited by someone. */
+  async function investorWithFunds(email: string, referredById?: string) {
+    await request(app)
+      .post('/api/v1/auth/register')
+      .set('Origin', ORIGIN)
+      .send({ firstName: 'Ada', lastName: 'Invitee', email, password: PASSWORD });
+    const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
+    const agent = request.agent(app);
+    const res = await agent
+      .post('/api/v1/auth/verify-email')
+      .set('Origin', ORIGIN)
+      .send({ token });
+    const userId = res.body.user.id as string;
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        kycStatus: 'VERIFIED',
+        kycVerifiedAt: new Date(),
+        ...(referredById ? { referredById, referredAt: new Date() } : {}),
+      },
+    });
+    await prisma.wallet.create({ data: { userId, balanceCents: 5_000_000n } }); // $50,000
+    return { agent, userId };
+  }
+
+  async function referrer(email: string) {
+    await request(app)
+      .post('/api/v1/auth/register')
+      .set('Origin', ORIGIN)
+      .send({ firstName: 'Joshua', lastName: 'Referrer', email, password: PASSWORD });
+    const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
+    const agent = request.agent(app);
+    const res = await agent
+      .post('/api/v1/auth/verify-email')
+      .set('Origin', ORIGIN)
+      .send({ token });
+    return { agent, userId: res.body.user.id as string };
+  }
+
+  const invest = (
+    agent: ReturnType<typeof request.agent>,
+    propertyId: string,
+    amountCents: string,
+  ) =>
+    agent
+      .post('/api/v1/investments')
+      .set('Origin', ORIGIN)
+      .send({ propertyId, amountCents });
+
+  async function balanceOf(userId: string) {
+    const wallet = await prisma.wallet.findUnique({ where: { userId } });
+    return wallet?.balanceCents ?? 0n;
+  }
+
+  it('pays the referrer 1% when their invitee first invests', async () => {
+    const boss = await referrer('earner@example.com');
+    const invitee = await investorWithFunds('invited@example.com', boss.userId);
+    const p = await property();
+
+    // $2,000 invested → $20 bonus.
+    await invest(invitee.agent, p.id, '200000').expect(201);
+
+    expect(await balanceOf(boss.userId)).toBe(2_000n);
+
+    const entries = await prisma.ledgerEntry.findMany({
+      where: { type: 'REFERRAL_BONUS' },
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.amountCents).toBe(2_000n);
+    expect(entries[0]!.balanceAfterCents).toBe(2_000n);
+    expect(entries[0]!.description).toBe('Referral bonus');
+  });
+
+  it('pays once — the invitee’s second investment earns nothing more', async () => {
+    const boss = await referrer('once@example.com');
+    const invitee = await investorWithFunds('twice@example.com', boss.userId);
+    const p = await property();
+
+    await invest(invitee.agent, p.id, '200000').expect(201);
+    await invest(invitee.agent, p.id, '500000').expect(201);
+
+    expect(await balanceOf(boss.userId)).toBe(2_000n);
+    expect(await prisma.ledgerEntry.count({ where: { type: 'REFERRAL_BONUS' } })).toBe(1);
+  });
+
+  it('pays nothing when nobody invited them', async () => {
+    const invitee = await investorWithFunds('nobody@example.com');
+    const p = await property();
+
+    await invest(invitee.agent, p.id, '200000').expect(201);
+    expect(await prisma.ledgerEntry.count({ where: { type: 'REFERRAL_BONUS' } })).toBe(0);
+  });
+
+  it('pays nothing to a suspended referrer', async () => {
+    const boss = await referrer('suspended@example.com');
+    await prisma.user.update({ where: { id: boss.userId }, data: { status: 'SUSPENDED' } });
+    const invitee = await investorWithFunds('undersuspended@example.com', boss.userId);
+    const p = await property();
+
+    await invest(invitee.agent, p.id, '200000').expect(201);
+    expect(await balanceOf(boss.userId)).toBe(0n);
+  });
+
+  /**
+   * The bonus rides the investment's transaction. A refused investment must
+   * leave no trace of a bonus, or we have paid somebody for nothing.
+   */
+  it('pays nothing when the investment itself fails', async () => {
+    const boss = await referrer('norollback@example.com');
+    const invitee = await investorWithFunds('poor@example.com', boss.userId);
+    await prisma.wallet.update({
+      where: { userId: invitee.userId },
+      data: { balanceCents: 100_000n }, // exactly the minimum, so $2,000 fails
+    });
+    const p = await property();
+
+    await invest(invitee.agent, p.id, '200000').expect(422);
+
+    expect(await balanceOf(boss.userId)).toBe(0n);
+    expect(await prisma.ledgerEntry.count({ where: { type: 'REFERRAL_BONUS' } })).toBe(0);
+  });
+
+  it('keeps the referrer’s books balanced', async () => {
+    const boss = await referrer('balanced@example.com');
+    const invitee = await investorWithFunds('balancedinvitee@example.com', boss.userId);
+    const p = await property();
+    await invest(invitee.agent, p.id, '350000').expect(201);
+
+    const wallet = await prisma.wallet.findUniqueOrThrow({
+      where: { userId: boss.userId },
+      include: { entries: true },
+    });
+    const sum = wallet.entries.reduce((acc, e) => acc + e.amountCents, 0n);
+    expect(sum).toBe(wallet.balanceCents);
+    expect(wallet.balanceCents).toBe(3_500n); // 1% of $3,500
+  });
+
+  it('reports earnings and the rate on the referral summary', async () => {
+    const boss = await referrer('summary@example.com');
+    const invitee = await investorWithFunds('summaryinvitee@example.com', boss.userId);
+    const p = await property();
+    await invest(invitee.agent, p.id, '200000').expect(201);
+
+    const res = await boss.agent.get('/api/v1/referrals/me').expect(200);
+    expect(res.body).toMatchObject({
+      totalReferrals: 1,
+      investedReferrals: 1,
+      earnedCents: '2000',
+      bonusBps: 100,
+    });
+  });
+
+  it('tells the referrer they were paid, naming the invitee only by initial', async () => {
+    // mockClear because this file sets its email spies in beforeAll and so has
+    // no restoreAllMocks between tests — call history would carry over.
+    const sent = vi.spyOn(emailService, 'sendReferralBonus').mockResolvedValue();
+    sent.mockClear();
+    const boss = await referrer('emailed@example.com');
+    const invitee = await investorWithFunds('emailedinvitee@example.com', boss.userId);
+    const p = await property();
+
+    await invest(invitee.agent, p.id, '200000').expect(201);
+
+    expect(sent).toHaveBeenCalledOnce();
+    expect(sent.mock.calls[0]![0]).toMatchObject({
+      to: 'emailed@example.com',
+      amount: '$20.00',
+      rate: '1%',
+      inviteeName: 'Ada I.',
+    });
+  });
+
+  it('does not email when no bonus was owed', async () => {
+    const sent = vi.spyOn(emailService, 'sendReferralBonus').mockResolvedValue();
+    sent.mockClear();
+    const invitee = await investorWithFunds('noreferrer@example.com');
+    const p = await property();
+
+    await invest(invitee.agent, p.id, '200000').expect(201);
+    expect(sent).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The bonus is already in the wallet by the time this runs. A mail provider
+   * having a bad afternoon must not turn that into a failed investment.
+   */
+  it('still completes the investment when the bonus email fails', async () => {
+    vi.spyOn(emailService, 'sendReferralBonus').mockRejectedValue(new Error('resend down'));
+    const boss = await referrer('mailfail@example.com');
+    const invitee = await investorWithFunds('mailfailinvitee@example.com', boss.userId);
+    const p = await property();
+
+    await invest(invitee.agent, p.id, '200000').expect(201);
+    expect(await balanceOf(boss.userId)).toBe(2_000n);
+  });
+
+  it('shows zero earnings before anyone invests', async () => {
+    const boss = await referrer('zero@example.com');
+    await investorWithFunds('notyet@example.com', boss.userId);
+
+    const res = await boss.agent.get('/api/v1/referrals/me').expect(200);
+    expect(res.body).toMatchObject({
+      totalReferrals: 1,
+      investedReferrals: 0,
+      earnedCents: '0',
+    });
+  });
+});

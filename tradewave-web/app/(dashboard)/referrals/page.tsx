@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { getReferralList, getReferralSummary } from '@/lib/referrals';
 import { CopyLink } from '@/components/dashboard/copy-link';
+import { formatBps, formatUsd } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'Referrals · Tradewave' };
 
@@ -20,7 +21,9 @@ export default async function ReferralsPage() {
           Referrals
         </h1>
         <p className="mt-1 text-[0.9375rem] text-muted-foreground">
-          Invite people to Tradewave with your personal link.
+          Invite people to Tradewave with your personal link. When someone you invited makes
+          their first investment, {summary ? formatBps(summary.bonusBps) : '1%'} of it is paid
+          into your wallet.
         </p>
       </header>
 
@@ -32,13 +35,30 @@ export default async function ReferralsPage() {
               {summary?.code ?? '—'}
             </p>
           </div>
-          <div className="flex gap-6">
+          <div className="flex flex-wrap gap-6">
             <Stat label="Invited" value={summary?.totalReferrals ?? 0} />
             <Stat label="Verified" value={summary?.verifiedReferrals ?? 0} />
+            <Stat label="Invested" value={summary?.investedReferrals ?? 0} />
           </div>
         </div>
 
         {summary?.shareUrl ? <CopyLink url={summary.shareUrl} /> : null}
+
+        {/* Earnings sit apart from the counts, and are labelled as already
+            paid. A figure on a referrals page that turns out to be a
+            projection is the one number people feel lied to about. */}
+        <div className="mt-5 flex flex-wrap items-baseline justify-between gap-3 border-t border-hairline pt-4">
+          <div>
+            <p className="text-[0.8125rem] font-medium text-muted-foreground">Earned so far</p>
+            <p className="mt-1 text-[1.5rem] leading-none font-semibold tracking-[-0.02em] tabular-nums text-foreground">
+              {formatUsd(summary?.earnedCents ?? '0')}
+            </p>
+          </div>
+          <p className="max-w-xs text-[0.75rem] leading-relaxed text-muted-foreground">
+            Already in your wallet — this is money you have been paid, not a projection. It
+            shows in your transactions as a referral bonus.
+          </p>
+        </div>
       </section>
 
       <section className="mt-6">
