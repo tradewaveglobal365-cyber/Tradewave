@@ -6,10 +6,15 @@ import type {
   CreateDepositAccountInput,
   DepositAccountDetails,
   PaymentProvider,
+  PayoutResult,
+  PayoutState,
+  PayoutStatus,
+  SendPayoutInput,
+  WebhookEvent,
 } from './types';
 
 /**
- * Klasha — dedicated naira collection accounts.
+ * Klasha — dedicated naira collection accounts, and naira payouts.
  *
  * ── The security shape of this integration ────────────────────────────────
  * Klasha's webhooks carry NO signature. Their documentation describes the
@@ -17,16 +22,59 @@ import type {
  * no header to verify. The endpoint is a public URL that anyone can POST to.
  *
  * So a webhook here is treated as a rumour, never as evidence. parseWebhook-
- * Reference pulls out a transaction reference and discards the rest of the
- * body — including the amount. Every figure that reaches the ledger comes back
- * from getPayment(), which asks Klasha directly over an authenticated call.
+ * Event pulls out a KIND and a reference and discards the rest of the body —
+ * including the amount. Every figure that reaches the ledger comes back from
+ * getPayment(), which asks Klasha directly over an authenticated call.
  *
  * The practical consequence: forging a webhook gets an attacker nothing better
  * than making us re-read a transaction that is either real or does not exist.
+ *
+ * ── One URL, three kinds of event ─────────────────────────────────────────
+ * Klasha posts collections, payouts and refunds to the SAME webhook URL, told
+ * apart only by `event`. They also use different reference fields per kind:
+ * collections and refunds carry `tnxRef`, payouts carry `reference`. Reading a
+ * reference without first reading the kind is how an outbound payout gets fed
+ * to the code that credits wallets, so parseWebhookEvent reads the kind first
+ * and refuses to guess.
  */
 
 /** Klasha reports success with this, and their docs show it lower-cased. */
 const SUCCESS_STATUS = 'successful';
+
+/**
+ * A non-2xx from Klasha, carrying the status code rather than burying it in a
+ * message string.
+ *
+ * The code is what separates the two failures that matter when SENDING money.
+ * A 4xx means Klasha understood the request and refused it — a bad account
+ * number, an empty naira float — so the money definitely did not move and the
+ * caller can safely give it back. A 5xx, a timeout or a dropped socket means
+ * nothing of the sort: the transfer may well have gone through. Collapsing the
+ * two is how somebody gets paid twice.
+ */
+export class KlashaHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly body: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'KlashaHttpError';
+  }
+
+  /** Klasha answers {message, error}; either may carry the useful sentence. */
+  get reason(): string {
+    try {
+      const parsed = JSON.parse(this.body) as { message?: unknown; error?: unknown };
+      for (const value of [parsed.error, parsed.message]) {
+        if (typeof value === 'string' && value.trim()) return value.trim();
+      }
+    } catch {
+      // Not JSON. Fall through to the raw body.
+    }
+    return this.body.trim() || `Klasha refused the request (${this.status}).`;
+  }
+}
 
 interface KlashaVirtualAccount {
   id?: number;
@@ -85,6 +133,8 @@ export class KlashaPaymentProvider implements PaymentProvider {
     private readonly encryptionKey: string,
     private readonly accountEmail: string,
     private readonly accountPassword: string,
+    /** Appears in the payout URL path. Collections do not need it. */
+    private readonly businessId: string = '',
   ) {}
 
   private async bearer(force = false): Promise<string> {
@@ -152,7 +202,11 @@ export class KlashaPaymentProvider implements PaymentProvider {
 
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`Klasha ${path} failed: ${res.status} ${body.slice(0, 200)}`);
+      throw new KlashaHttpError(
+        res.status,
+        body,
+        `Klasha ${path} failed: ${res.status} ${body.slice(0, 200)}`,
+      );
     }
     return (await res.json()) as T;
   }
@@ -335,16 +389,183 @@ export class KlashaPaymentProvider implements PaymentProvider {
   }
 
   /**
-   * Pulls the transaction reference out of a webhook body. Nothing else is read.
+   * Classifies a webhook body. Nothing else is read.
    *
    * Klasha's charge.completed carries an amount, a currency and a customer, and
-   * all of it is ignored on purpose — see the note at the top of this file. The
+   * all of it is ignored on purpose — see the note at the top of this file. A
    * reference is a lookup key, not a claim, so trusting it costs nothing.
+   *
+   * The `event` field decides the kind. An unrecognised event is null rather
+   * than a guess: Klasha sends kinds we have no interest in, and "it has a
+   * tnxRef so it must be a collection" is exactly the inference that would let
+   * a payout notification credit a wallet.
    */
-  parseWebhookReference(body: unknown): string | null {
+  parseWebhookEvent(body: unknown): WebhookEvent | null {
     if (typeof body !== 'object' || body === null) return null;
-    const payload = body as { tnxRef?: unknown; data?: { tnxRef?: unknown } };
-    const ref = payload.data?.tnxRef ?? payload.tnxRef;
-    return typeof ref === 'string' && ref.length > 0 ? ref : null;
+    const payload = body as {
+      event?: unknown;
+      data?: { tnxRef?: unknown; reference?: unknown; status?: unknown } | undefined;
+      tnxRef?: unknown;
+    };
+
+    const event = typeof payload.event === 'string' ? payload.event.toLowerCase() : null;
+
+    if (event === 'payout') {
+      // Payouts identify themselves by `reference`, NOT by tnxRef. That is
+      // Klasha's inconsistency, not ours, and it is the reason this method
+      // exists: the old parser read tnxRef only, so a payout webhook came back
+      // as null and was silently dropped.
+      const ref = payload.data?.reference;
+      if (typeof ref !== 'string' || !ref) return null;
+      return { kind: 'payout', reference: ref, state: toPayoutState(payload.data?.status) };
+    }
+
+    if (event === null || event.startsWith('charge')) {
+      // No event field at all is treated as a collection for compatibility:
+      // that is the shape Klasha sent before they documented `event`, and a
+      // deposit that stops crediting is a worse failure than one extra
+      // authenticated lookup. It is safe precisely because a collection is
+      // verified against getPayment() before a cent moves.
+      const ref = payload.data?.tnxRef ?? payload.tnxRef;
+      if (typeof ref !== 'string' || !ref) return null;
+      return { kind: 'collection', reference: ref };
+    }
+
+    return null;
   }
+
+  // ── Money going out ────────────────────────────────────────────────────────
+
+  /**
+   * Sends naira to a bank account.
+   *
+   * Two things about this endpoint differ from every other call in this file.
+   * The business id sits in the PATH rather than a header, and the body is
+   * 3DES-encrypted — while the account-resolve call on the same documentation
+   * page is plain JSON. Getting that split backwards fails with a generic
+   * provider error and no clue which half was wrong.
+   *
+   * `amount` goes over as a NUMBER in whole naira, not kobo. The caller pins a
+   * figure that is already a whole number of naira, so nothing is rounded here
+   * — if that ever stops being true this should throw rather than truncate
+   * somebody's money silently.
+   */
+  async sendPayout(input: SendPayoutInput): Promise<PayoutResult> {
+    if (!this.businessId) {
+      throw new Error('KLASHA_BUSINESS_ID is not set — the payout URL cannot be built');
+    }
+    if (input.amountMinor % 100n !== 0n) {
+      throw new Error(
+        `Payout amount must be a whole number of naira, got ${input.amountMinor} kobo`,
+      );
+    }
+
+    const payload = {
+      amount: Number(input.amountMinor / 100n),
+      country: input.country,
+      currency: input.currency,
+      bankCode: input.bankCode,
+      bankName: input.bankName,
+      accountNumber: input.accountNumber,
+      accountName: input.accountName,
+      requestId: input.requestId,
+      description: input.description,
+    };
+
+    try {
+      const body = await this.request<{ data?: KlashaPayout }>(
+        `/wallet/merchant/${encodeURIComponent(this.businessId)}/bank/transfer/v2/request`,
+        {
+          method: 'POST',
+          body: JSON.stringify(encryptedBody(payload, this.encryptionKey)),
+        },
+      );
+
+      // Accepted. Whether it has SETTLED is a different question, answered by
+      // the webhook or by getPayout — so a missing status here is 'sent', not
+      // an error: Klasha took the request either way.
+      return { state: 'sent', providerRef: payoutRef(body.data) };
+    } catch (err) {
+      // 4xx: they understood and refused. Safe to return the money.
+      if (err instanceof KlashaHttpError && err.status >= 400 && err.status < 500) {
+        logger.warn(
+          { requestId: input.requestId, status: err.status },
+          'Klasha refused a payout',
+        );
+        return { state: 'refused', reason: err.reason };
+      }
+      // Anything else — 5xx, timeout, dropped socket — means we do not know
+      // whether the money moved. Rethrown so the caller leaves the withdrawal
+      // alone rather than crediting it back and paying twice.
+      throw err;
+    }
+  }
+
+  /**
+   * Where a payout stands, by our own requestId.
+   *
+   * Klasha's guidance is to rely on the webhook rather than to poll, and their
+   * transfer lookup is not documented as clearly as the collection one. So this
+   * reuses the merchant status endpoint and is deliberately conservative: an
+   * answer it cannot read confidently comes back as null, and the sweep leaves
+   * the withdrawal exactly where it was. A wrong guess here would either strand
+   * money or return money that has already been sent.
+   */
+  async getPayout(requestId: string): Promise<PayoutStatus | null> {
+    try {
+      const body = await this.request<{ data?: KlashaPayout }>(
+        '/nucleus/tnx/merchant/status',
+        { method: 'POST', body: JSON.stringify({ tnxRef: requestId }) },
+      );
+      const data = body.data;
+      if (!data) return null;
+
+      const raw = data.payoutStatus ?? data.status;
+      if (typeof raw !== 'string' || !raw.trim()) return null;
+
+      return {
+        state: toPayoutState(raw),
+        providerRef: payoutRef(data),
+        reason: typeof data.reason === 'string' ? data.reason : null,
+      };
+    } catch (err) {
+      // An unknown reference is an ordinary answer here, not an incident: a
+      // transfer Klasha has not registered yet looks exactly like this.
+      logger.info({ requestId, err }, 'Klasha could not report on that payout');
+      return null;
+    }
+  }
+}
+
+/** The transfer body Klasha echoes back on create and on lookup. */
+interface KlashaPayout {
+  id?: unknown;
+  requestId?: unknown;
+  reference?: unknown;
+  payoutStatus?: unknown;
+  status?: unknown;
+  reason?: unknown;
+}
+
+/** Their reference for the transfer, under whichever key they used. */
+function payoutRef(data: KlashaPayout | undefined): string | null {
+  for (const value of [data?.reference, data?.id]) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number') return String(value);
+  }
+  return null;
+}
+
+/**
+ * Klasha's status word, mapped.
+ *
+ * Anything unrecognised becomes 'pending' rather than 'failed'. Pending is the
+ * state that causes us to look again; failed is the state that hands money
+ * back. A word we have never seen before must not do the second one.
+ */
+function toPayoutState(value: unknown): PayoutState {
+  const word = typeof value === 'string' ? value.toLowerCase().trim() : '';
+  if (word === SUCCESS_STATUS || word === 'success' || word === 'completed') return 'successful';
+  if (word === 'failed' || word === 'failure' || word === 'reversed') return 'failed';
+  return 'pending';
 }

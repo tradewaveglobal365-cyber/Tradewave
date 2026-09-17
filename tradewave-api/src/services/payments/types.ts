@@ -1,8 +1,8 @@
 /**
- * The deposit-collection contract. Deliberately provider-neutral: no vendor
- * appears in this file, so replacing one is a new class in ./ and nothing else
- * in the codebase moves. The same shape the KYC driver uses, for the same
- * reason — the last provider was swapped out mid-build.
+ * The money-movement contract, both directions. Deliberately provider-neutral:
+ * no vendor appears in this file, so replacing one is a new class in ./ and
+ * nothing else in the codebase moves. The same shape the KYC driver uses, for
+ * the same reason — the last provider was swapped out mid-build.
  *
  * Shaped around DEDICATED BANK ACCOUNTS. The provider issues one permanent
  * naira account per user; the user transfers into it from their own banking app
@@ -83,15 +83,21 @@ export interface PaymentProvider {
   getPayment(providerRef: string): Promise<ConfirmedPayment | null>;
 
   /**
-   * Extracts the transaction reference from a webhook body — and nothing else.
+   * Classifies a webhook body — and extracts nothing else.
    *
-   * Deliberately narrow. The return type carries no amount and no account,
-   * because a webhook is not evidence of a payment: it is a prompt to go and
-   * ask. Everything that moves money comes back from getPayment().
+   * Deliberately narrow. The return type carries no amount, because a webhook
+   * is not evidence of anything: it is a prompt to go and ask. Everything that
+   * moves money comes back from getPayment() or getPayout().
    *
-   * Returns null when the body carries no usable reference.
+   * It is typed as a UNION rather than a bare reference because one provider
+   * URL receives every kind of event. Money coming in and money going out
+   * arrive at the same endpoint, and telling them apart by shape alone is how
+   * an outbound payout ends up credited to somebody's wallet.
+   *
+   * Returns null for anything unrecognised, which is the common case: providers
+   * send event types we have no interest in.
    */
-  parseWebhookReference(body: unknown): string | null;
+  parseWebhookEvent(body: unknown): WebhookEvent | null;
 
   /**
    * The banks a payout can be sent to, for the currency given.
@@ -121,4 +127,86 @@ export interface PaymentProvider {
    * credited. Returns confirmed payments only.
    */
   listRecentPayments(limit: number): Promise<ConfirmedPayment[]>;
+
+  /**
+   * Sends money to a bank account.
+   *
+   * Returns rather than throws when the PROVIDER refuses, and throws when the
+   * call itself fails. That distinction is the whole reason this returns a
+   * union — see PayoutResult.
+   */
+  sendPayout(input: SendPayoutInput): Promise<PayoutResult>;
+
+  /**
+   * Where a payout stands, by OUR reference rather than theirs.
+   *
+   * Keyed on requestId because that is the only identifier we are guaranteed to
+   * hold: the provider's own reference arrives in a response body we cannot
+   * fully rely on, and in a webhook that may never come.
+   *
+   * Returns null when the provider has never heard of it.
+   */
+  getPayout(requestId: string): Promise<PayoutStatus | null>;
 }
+
+// ── Money going out ──────────────────────────────────────────────────────────
+
+export interface SendPayoutInput {
+  /** Our reference. Unique per withdrawal, and the key getPayout reads back. */
+  requestId: string;
+  /** Minor units of the destination currency — kobo, for naira. */
+  amountMinor: bigint;
+  currency: string;
+  /** ISO 3166-1 alpha-2, e.g. 'NG'. */
+  country: string;
+  bankCode: string;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  /** What the recipient sees on their statement. */
+  description: string;
+}
+
+export type PayoutState = 'pending' | 'successful' | 'failed';
+
+export interface PayoutStatus {
+  state: PayoutState;
+  /** The provider's own reference, when it gives one. */
+  providerRef: string | null;
+  /** Their words, on a failure. */
+  reason: string | null;
+}
+
+/**
+ * What came back from asking a provider to send money.
+ *
+ * Two outcomes, and a third that is NOT represented here on purpose.
+ *
+ *   'sent'    — they accepted it. It may still fail later; that is what
+ *               getPayout and the webhook are for.
+ *   'refused' — they rejected it outright. A bad account number, or an empty
+ *               float. The money definitely did not move, so the caller can
+ *               safely return it to the wallet.
+ *
+ * The third outcome is a THROWN error: a timeout, a dropped socket, a 502. That
+ * one must not be a value here, because every value in this union is something
+ * a caller can act on, and "we do not know whether the money left" is not. An
+ * implementation that catches a timeout and returns 'refused' is how somebody
+ * gets paid twice.
+ */
+export type PayoutResult =
+  | { state: 'sent'; providerRef: string | null }
+  | { state: 'refused'; reason: string };
+
+// ── Webhooks ─────────────────────────────────────────────────────────────────
+
+/**
+ * A classified webhook.
+ *
+ * `kind` is load-bearing: it is what stops an outbound payout notification
+ * being fed to the code that credits wallets. Nothing downstream may infer the
+ * kind from any other field.
+ */
+export type WebhookEvent =
+  | { kind: 'collection'; reference: string }
+  | { kind: 'payout'; reference: string; state: PayoutState };

@@ -108,6 +108,21 @@ export async function setPayoutAccount(
     });
   }
 
+  // Whether the DESTINATION moved, as opposed to the row being written again.
+  //
+  // Withdrawals are held for 24 hours after a change, and that clock has to
+  // key off the money actually being pointed somewhere new. Re-saving the same
+  // account — which the form does whenever somebody opens it and presses Save
+  // — must not start a fresh hold, or the control reads as arbitrary and the
+  // first thing users learn is to work around it.
+  const existing = await prisma.payoutAccount.findUnique({
+    where: { userId },
+    select: { bankCode: true, accountNumber: true },
+  });
+  const destinationMoved =
+    existing !== null &&
+    (existing.bankCode !== bank.code || existing.accountNumber !== input.accountNumber);
+
   const row = await prisma.payoutAccount.upsert({
     where: { userId },
     create: {
@@ -128,6 +143,7 @@ export async function setPayoutAccount(
       accountNumber: input.accountNumber,
       accountName: resolved ?? input.accountName,
       nameResolved: resolved !== null,
+      ...(destinationMoved ? { destinationChangedAt: new Date() } : {}),
     },
   });
 

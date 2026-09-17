@@ -58,7 +58,9 @@ services:
       # provider, because we would hand a user an account number and then be
       # unable to confirm what lands in it. Leave unset to keep the stub driver,
       # which issues nothing in production.
-      #   Sandbox https://dev.kcookery.com — live https://gate.klasapps.com/pay
+      #   Sandbox https://dev.kcookery.com — live https://gate.klasapps.com
+      #   HOST ONLY, no path: "/pay" is part of one endpoint in Klasha's docs,
+      #   not part of the base, and env.ts refuses to boot with a path here.
       - key: KLASHA_BASE_URL
         sync: false
       - key: KLASHA_PUBLIC_KEY
@@ -72,6 +74,11 @@ services:
       - key: KLASHA_ACCOUNT_EMAIL
         sync: false
       - key: KLASHA_ACCOUNT_PASSWORD
+        sync: false
+      # Withdrawals only — it sits in the PATH of Klasha's payout endpoint.
+      # Deliberately outside the all-or-nothing group: a deployment that only
+      # takes deposits must not fail to boot because payouts were added.
+      - key: KLASHA_BUSINESS_ID
         sync: false
 
       # Listing photographs (Supabase Storage). Both or neither — without them

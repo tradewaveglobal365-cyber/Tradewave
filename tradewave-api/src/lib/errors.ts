@@ -79,12 +79,9 @@ export const invalidToken = (message = 'This link is invalid or has expired.') =
 export const tooManyRequests = (message = 'Too many requests. Please slow down.') =>
   new AppError(429, 'TOO_MANY_REQUESTS', message);
 
-export const insufficientFunds = () =>
-  new AppError(
-    422,
-    'INSUFFICIENT_FUNDS',
-    'Your wallet balance is not enough for this investment.',
-  );
+export const insufficientFunds = (
+  message = 'Your wallet balance is not enough for this investment.',
+) => new AppError(422, 'INSUFFICIENT_FUNDS', message);
 
 export const propertyUnavailable = (message = 'This property is no longer accepting investment.') =>
   new AppError(409, 'PROPERTY_UNAVAILABLE', message);
@@ -125,3 +122,68 @@ export const storageUnavailable = (
 export const banksUnavailable = (
   message = 'We could not load the list of banks. Please try again shortly.',
 ) => new AppError(503, 'BANKS_UNAVAILABLE', message);
+
+// ── Withdrawals ──────────────────────────────────────────────────────────────
+
+/** There is nowhere to send the money yet. */
+export const noPayoutAccount = () =>
+  new AppError(
+    422,
+    'NO_PAYOUT_ACCOUNT',
+    'Add the bank account you want to be paid into before withdrawing.',
+  );
+
+/**
+ * The destination changed too recently to pay out to it.
+ *
+ * Redirecting the payout account is the move an attacker makes with a stolen
+ * session, and the change already emails the real owner. The hold is what turns
+ * that email into something they can act on — without it the notice and the
+ * money leave at the same moment.
+ */
+export const payoutAccountTooNew = (until: Date) =>
+  new AppError(
+    403,
+    'PAYOUT_ACCOUNT_TOO_NEW',
+    `For your security, withdrawals are held for 24 hours after the payout account changes. You can withdraw from ${until.toUTCString()}.`,
+  );
+
+export const belowMinimumWithdrawal = (minimum: string) =>
+  new AppError(422, 'BELOW_MINIMUM_WITHDRAWAL', `The minimum withdrawal is ${minimum}.`, {
+    amountCents: `Minimum is ${minimum}`,
+  });
+
+/**
+ * One withdrawal at a time, per investor.
+ *
+ * Not a technical limit — concurrent requests would work — but a deliberate
+ * one. It keeps "what is happening with my money" answerable with a single
+ * row, and it means a compromised account cannot queue ten payouts before
+ * anybody looks at the first.
+ */
+export const withdrawalPending = () =>
+  new AppError(
+    409,
+    'WITHDRAWAL_PENDING',
+    'You already have a withdrawal in progress. It has to finish before you can request another.',
+  );
+
+/**
+ * Asked for outside the payout schedule.
+ *
+ * Carries the next opening so the client can count down to it rather than
+ * saying "not now" and leaving the user to work out when.
+ */
+export const withdrawalsClosed = (opensAt: Date | null, schedule: string) =>
+  new AppError(
+    403,
+    'WITHDRAWALS_CLOSED',
+    opensAt
+      ? `Withdrawals are open ${schedule}. The next one opens on ${opensAt.toUTCString()}.`
+      : `Withdrawals are open ${schedule}.`,
+  );
+
+/** No rate set, or no payment provider configured. Same 503 reasoning as above. */
+export const withdrawalsUnavailable = (
+  message = 'Withdrawals are temporarily unavailable. Please try again shortly.',
+) => new AppError(503, 'WITHDRAWALS_UNAVAILABLE', message);

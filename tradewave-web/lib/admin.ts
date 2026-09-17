@@ -208,3 +208,62 @@ export async function getPendingReviews(): Promise<AdminReviewRow[]> {
   const body = await authedGet<{ reviews: AdminReviewRow[] }>('/admin/identity/reviews');
   return body?.reviews ?? [];
 }
+
+// ── Withdrawals ──────────────────────────────────────────────────────────────
+
+export interface AdminWithdrawal {
+  id: string;
+  status: string;
+  amountCents: string;
+  feeCents: string;
+  netCents: string;
+  bankName: string;
+  bankCode: string;
+  accountNumberMasked: string;
+  accountName: string;
+  destinationAmountMinor: string | null;
+  rateMinorPerUnit: string | null;
+  provider: string;
+  providerRef: string | null;
+  failureReason: string | null;
+  rejectionReason: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+  paidAt: string | null;
+  waitingHours: number;
+  /** The destination moved in the last week — the thing a reviewer is here for. */
+  destinationChangedRecently: boolean;
+  nameResolved: boolean;
+  user: { id: string; email: string; firstName: string; lastName: string };
+}
+
+export async function getAdminWithdrawals(): Promise<AdminWithdrawal[]> {
+  const body = await authedGet<{ withdrawals: AdminWithdrawal[] }>('/admin/withdrawals');
+  return body?.withdrawals ?? [];
+}
+
+export interface WithdrawalWindowSettings {
+  enabled: boolean;
+  /** 0 = Sunday through 6 = Saturday. */
+  daysOfWeek: number[];
+  /** Minutes from midnight, in `timezone`. */
+  opensAtMinute: number;
+  closesAtMinute: number;
+  timezone: string;
+  updatedAt: string;
+}
+
+export interface WithdrawalWindowState {
+  open: boolean;
+  opensAt: string | null;
+  closesAt: string | null;
+}
+
+export async function getWithdrawalWindow(): Promise<{
+  window: WithdrawalWindowSettings;
+  state: WithdrawalWindowState;
+} | null> {
+  return authedGet<{ window: WithdrawalWindowSettings; state: WithdrawalWindowState }>(
+    '/admin/withdrawal-window',
+  );
+}

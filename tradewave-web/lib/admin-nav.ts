@@ -1,5 +1,6 @@
 import {
   ArrowLeftRight,
+  ArrowUpRight,
   Banknote,
   Building2,
   ShieldCheck,
@@ -55,5 +56,11 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     label: 'Deposits',
     icon: Banknote,
     description: 'Money that has landed, and anything held waiting on a rate.',
+  },
+  {
+    href: '/admin/withdrawals',
+    label: 'Withdrawals',
+    icon: ArrowUpRight,
+    description: 'Money investors have asked for, waiting on somebody to release it.',
   },
 ];

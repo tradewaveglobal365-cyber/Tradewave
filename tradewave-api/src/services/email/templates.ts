@@ -219,6 +219,103 @@ export function payoutAccountChangedTemplate(
   };
 }
 
+export function withdrawalRequestedTemplate(
+  firstName: string,
+  amount: string,
+  fee: string,
+  bankName: string,
+  accountNumberMasked: string,
+  url: string,
+) {
+  return {
+    subject: `Withdrawal requested — ${amount}`,
+    html: shell(
+      'Withdrawal requested',
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, we have your request to withdraw ${escapeHtml(amount)} from your Tradewave wallet. It has been taken out of your balance and is now waiting to be reviewed and sent.</p>
+       ${rows([
+         ['Amount', amount],
+         ['Fee', fee],
+         ['To', `${bankName} ${accountNumberMasked}`],
+       ])}
+       <p style="margin:20px 0 0;">You will get another email when the money is on its way. The naira amount is set at the rate in force when it is sent.</p>
+       <p style="margin:20px 0 0;color:#0E1512;"><strong>If you did not request this, contact us immediately and change your password.</strong></p>`,
+      { label: 'View your wallet', url },
+    ),
+    text: `Hi ${firstName}, we have your request to withdraw ${amount} from your Tradewave wallet.\n\nAmount: ${amount}\nFee: ${fee}\nTo: ${bankName} ${accountNumberMasked}\n\nYou will get another email when the money is on its way.\n\nIf you did not request this, contact us immediately and change your password.\n\n${url}`,
+  };
+}
+
+export function withdrawalSettledTemplate(params: {
+  firstName: string;
+  paid: boolean;
+  amount: string;
+  bankName: string;
+  accountNumberMasked: string;
+  naira?: string | undefined;
+  rate?: string | undefined;
+  reason?: string | undefined;
+  url: string;
+}) {
+  const { firstName, paid, amount, bankName, accountNumberMasked, naira, rate, reason, url } =
+    params;
+
+  if (paid) {
+    const pairs: [string, string][] = [
+      ['Withdrawn', amount],
+      ['To', `${bankName} ${accountNumberMasked}`],
+    ];
+    if (naira) pairs.splice(1, 0, ['Sent', naira]);
+    if (rate) pairs.push(['Rate', rate]);
+
+    return {
+      subject: `Your withdrawal is on its way — ${amount}`,
+      html: shell(
+        'Your withdrawal is on its way',
+        `<p style="margin:0;">Hi ${escapeHtml(firstName)}, your withdrawal has been sent to your bank. Transfers usually arrive within minutes, though your bank can take longer.</p>
+         ${rows(pairs)}`,
+        { label: 'View your wallet', url },
+      ),
+      text: `Hi ${firstName}, your Tradewave withdrawal has been sent to your bank.\n\nWithdrawn: ${amount}${naira ? `\nSent: ${naira}` : ''}\nTo: ${bankName} ${accountNumberMasked}${rate ? `\nRate: ${rate}` : ''}\n\n${url}`,
+    };
+  }
+
+  return {
+    subject: 'Your withdrawal could not be completed',
+    html: shell(
+      'Your withdrawal could not be completed',
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, we could not complete your ${escapeHtml(amount)} withdrawal to ${escapeHtml(bankName)} ${escapeHtml(accountNumberMasked)}.</p>
+       <p style="margin:20px 0 0;"><strong>The money is back in your wallet.</strong> Nothing has been lost — you can request it again once the problem below is sorted out.</p>
+       ${reason ? `<p style="margin:20px 0 0;color:#5C6660;">Reason: ${escapeHtml(reason)}</p>` : ''}`,
+      { label: 'View your wallet', url },
+    ),
+    text: `Hi ${firstName}, we could not complete your ${amount} withdrawal to ${bankName} ${accountNumberMasked}.\n\nThe money is back in your wallet. You can request it again once the problem is sorted out.${reason ? `\n\nReason: ${reason}` : ''}\n\n${url}`,
+  };
+}
+
+export function referralBonusTemplate(
+  firstName: string,
+  inviteeName: string,
+  amount: string,
+  rate: string,
+  url: string,
+) {
+  return {
+    subject: `You earned ${amount}`,
+    html: shell(
+      `You earned ${escapeHtml(amount)}`,
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, ${escapeHtml(inviteeName)} joined Tradewave with your link and has just made their first investment.</p>
+       ${rows([
+         ['Your bonus', amount],
+         ['Rate', `${rate} of their first investment`],
+         ['From', inviteeName],
+       ])}
+       <p style="margin:20px 0 0;">It is already in your wallet &mdash; nothing to claim. You can invest it or withdraw it like any other balance.</p>`,
+      { label: 'View your referrals', url },
+    ),
+    text: `Hi ${firstName}, ${inviteeName} joined Tradewave with your link and has just made their first investment.\n\nYour bonus: ${amount}\nRate: ${rate} of their first investment\n\nIt is already in your wallet — nothing to claim.\n\n${url}`,
+  };
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,

@@ -59,6 +59,11 @@ const envSchema = z.object({
   KLASHA_ENCRYPTION_KEY: z.string().default(''),
   KLASHA_ACCOUNT_EMAIL: z.string().default(''),
   KLASHA_ACCOUNT_PASSWORD: z.string().default(''),
+  // Sits in the PATH of the payout endpoint, not a header. Collections never
+  // need it, which is why it is not in the all-or-nothing group below: an
+  // existing deployment that only takes deposits must not fail to boot because
+  // withdrawals were added.
+  KLASHA_BUSINESS_ID: z.string().default('').transform((v) => v.trim()),
 
   // Supabase Storage — listing photographs. Both together or neither; without
   // them the upload route answers 503 and an admin can still manage everything

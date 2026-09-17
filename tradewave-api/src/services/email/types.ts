@@ -75,6 +75,57 @@ export interface PayoutAccountChangedEmail {
   url: string;
 }
 
+/**
+ * A withdrawal has been asked for, and the dollars have already left the wallet.
+ *
+ * A security notice rather than a receipt, for the same reason
+ * PayoutAccountChangedEmail is: money leaving is the thing an attacker with a
+ * stolen session does, and this is the message that reaches the real owner
+ * while it can still be stopped.
+ */
+export interface WithdrawalRequestedEmail {
+  to: string;
+  firstName: string;
+  amount: string;
+  fee: string;
+  bankName: string;
+  accountNumberMasked: string;
+  url: string;
+}
+
+/** A withdrawal reached its end state, one way or the other. */
+export interface WithdrawalSettledEmail {
+  to: string;
+  firstName: string;
+  paid: boolean;
+  amount: string;
+  bankName: string;
+  accountNumberMasked: string;
+  /** Set when paid: what actually landed, and the rate it was converted at. */
+  naira?: string | undefined;
+  rate?: string | undefined;
+  /** Set when it was not paid, in whoever's words refused it. */
+  reason?: string | undefined;
+  url: string;
+}
+
+/**
+ * Somebody you invited invested, and you have been paid for it.
+ *
+ * The invitee is named the way /referrals names them — first name and last
+ * initial. Referring someone is not a reason to be handed their full identity,
+ * and an email is the easiest place to leak it by accident.
+ */
+export interface ReferralBonusEmail {
+  to: string;
+  firstName: string;
+  inviteeName: string;
+  amount: string;
+  /** The rate it was calculated at, e.g. "1%". */
+  rate: string;
+  url: string;
+}
+
 export interface EmailService {
   sendVerification(input: VerificationEmail): Promise<void>;
   sendPasswordReset(input: PasswordResetEmail): Promise<void>;
@@ -83,4 +134,7 @@ export interface EmailService {
   sendDepositCredited(input: DepositCreditedEmail): Promise<void>;
   sendInvestmentConfirmed(input: InvestmentConfirmedEmail): Promise<void>;
   sendPayoutAccountChanged(input: PayoutAccountChangedEmail): Promise<void>;
+  sendWithdrawalRequested(input: WithdrawalRequestedEmail): Promise<void>;
+  sendWithdrawalSettled(input: WithdrawalSettledEmail): Promise<void>;
+  sendReferralBonus(input: ReferralBonusEmail): Promise<void>;
 }

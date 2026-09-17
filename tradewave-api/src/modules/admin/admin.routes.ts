@@ -12,6 +12,15 @@ import {
 import * as service from './admin.service';
 import * as investors from './investor.service';
 import * as properties from './property-admin.service';
+import * as withdrawals from './withdrawal-admin.service';
+import * as withdrawal from '../wallet/withdrawal.service';
+import {
+  markPaidSchema,
+  rejectWithdrawalSchema,
+  setWithdrawalWindowSchema,
+  type SetWithdrawalWindowInput,
+} from '../wallet/schemas';
+import * as window from '../wallet/withdrawal-window.service';
 import {
   createPropertySchema,
   propertyStatusSchema,
@@ -53,6 +62,82 @@ adminRouter.get('/deposits', async (_req: Request, res: Response) => {
 adminRouter.post('/deposits/:id/retry', async (req: Request, res: Response) => {
   res.json({ deposit: await service.retryDeposit(id(req)) });
 });
+
+// ── Withdrawals ─────────────────────────────────────────────────────────────
+
+/**
+ * The payout schedule.
+ *
+ * A setting rather than a constant because the first public holiday or bank
+ * outage that lands on payout day needs moving that morning, not next release.
+ */
+adminRouter.get('/withdrawal-window', async (_req: Request, res: Response) => {
+  const current = await window.getWindow();
+  res.json({ window: current, state: window.evaluateWindow(current) });
+});
+
+adminRouter.post(
+  '/withdrawal-window',
+  validateBody(setWithdrawalWindowSchema),
+  async (req: Request, res: Response) => {
+    if (!req.auth) throw badRequest('Not signed in.');
+    const input = req.body as SetWithdrawalWindowInput;
+    const saved = await window.setWindow(input, req.auth.userId);
+    res.json({ window: saved, state: window.evaluateWindow(saved) });
+  },
+);
+
+/**
+ * The queue, swept on the way through.
+ *
+ * The sweep hangs off this read rather than the investor's wallet for the same
+ * reason the deposit one hangs off theirs: it belongs where the person who
+ * cares about stuck money will actually trigger it. It is throttled internally
+ * and swallows its own failures, so a provider outage cannot stop the queue
+ * rendering.
+ */
+adminRouter.get('/withdrawals', async (_req: Request, res: Response) => {
+  await withdrawal.reconcileWithdrawals();
+  res.json({ withdrawals: await withdrawals.listWithdrawals() });
+});
+
+/** Releases the money: pins the rate and asks the provider to send it. */
+adminRouter.post('/withdrawals/:id/approve', async (req: Request, res: Response) => {
+  if (!req.auth) throw badRequest('Not signed in.');
+  res.json({ withdrawal: await withdrawal.approveWithdrawal(id(req), req.auth.userId) });
+});
+
+/** Refuses it and returns the money, with a reason the investor is told. */
+adminRouter.post(
+  '/withdrawals/:id/reject',
+  validateBody(rejectWithdrawalSchema),
+  async (req: Request, res: Response) => {
+    if (!req.auth) throw badRequest('Not signed in.');
+    const { reason } = req.body as { reason: string };
+    res.json({
+      withdrawal: await withdrawal.rejectWithdrawal(id(req), req.auth.userId, reason),
+    });
+  },
+);
+
+/**
+ * The manual rail: paid from a bank app rather than through the provider.
+ *
+ * Exists because the provider can be unreachable for reasons that have nothing
+ * to do with the investor — an IP allowlist, an empty float — and somebody
+ * waiting for their own money should not have to wait for that to be sorted.
+ */
+adminRouter.post(
+  '/withdrawals/:id/mark-paid',
+  validateBody(markPaidSchema),
+  async (req: Request, res: Response) => {
+    if (!req.auth) throw badRequest('Not signed in.');
+    const { note } = req.body as { note?: string };
+    res.json({
+      withdrawal: await withdrawal.markWithdrawalPaid(id(req), req.auth.userId, note),
+    });
+  },
+);
 
 // ── Investors ────────────────────────────────────────────────────────────────
 

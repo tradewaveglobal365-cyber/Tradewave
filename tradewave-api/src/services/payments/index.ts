@@ -8,9 +8,23 @@ import type {
   CreateDepositAccountInput,
   DepositAccountDetails,
   PaymentProvider,
+  PayoutResult,
+  PayoutStatus,
+  SendPayoutInput,
+  WebhookEvent,
 } from './types';
 
-export type { PaymentProvider, ConfirmedPayment, DepositAccountDetails, Bank } from './types';
+export type {
+  PaymentProvider,
+  ConfirmedPayment,
+  DepositAccountDetails,
+  Bank,
+  PayoutResult,
+  PayoutState,
+  PayoutStatus,
+  SendPayoutInput,
+  WebhookEvent,
+} from './types';
 
 /**
  * Stand-in driver used until Klasha credentials exist.
@@ -84,11 +98,54 @@ export class StubPaymentProvider implements PaymentProvider {
     return null;
   }
 
-  parseWebhookReference(body: unknown): string | null {
+  parseWebhookEvent(body: unknown): WebhookEvent | null {
     if (typeof body !== 'object' || body === null) return null;
-    const payload = body as { tnxRef?: unknown; data?: { tnxRef?: unknown } };
-    const ref = payload.data?.tnxRef ?? payload.tnxRef;
-    return typeof ref === 'string' && ref.length > 0 ? ref : null;
+    const payload = body as {
+      event?: unknown;
+      data?: { tnxRef?: unknown; reference?: unknown; status?: unknown } | undefined;
+      tnxRef?: unknown;
+    };
+
+    const event = typeof payload.event === 'string' ? payload.event.toLowerCase() : null;
+
+    if (event === 'payout') {
+      const ref = payload.data?.reference;
+      if (typeof ref !== 'string' || !ref) return null;
+      const status = typeof payload.data?.status === 'string' ? payload.data.status : '';
+      return {
+        kind: 'payout',
+        reference: ref,
+        state:
+          status === 'successful' ? 'successful' : status === 'failed' ? 'failed' : 'pending',
+      };
+    }
+
+    if (event === null || event.startsWith('charge')) {
+      const ref = payload.data?.tnxRef ?? payload.tnxRef;
+      if (typeof ref !== 'string' || !ref) return null;
+      return { kind: 'collection', reference: ref };
+    }
+
+    return null;
+  }
+
+  /** Simulated outbound transfers, keyed by OUR requestId. Never persisted. */
+  private readonly payouts = new Map<string, PayoutStatus>();
+
+  async sendPayout(input: SendPayoutInput): Promise<PayoutResult> {
+    if (isProduction) {
+      throw new Error('No payment provider configured — refusing to send a payout');
+    }
+    // Settles immediately, so a local walkthrough reaches PAID without anyone
+    // having to fake a webhook. Tests that need a refusal or a hang spy on this
+    // method directly, the way the deposit tests spy on getPayment.
+    const providerRef = `stub_payout_${input.requestId}`;
+    this.payouts.set(input.requestId, { state: 'successful', providerRef, reason: null });
+    return { state: 'sent', providerRef };
+  }
+
+  async getPayout(requestId: string): Promise<PayoutStatus | null> {
+    return this.payouts.get(requestId) ?? null;
   }
 
   /**
@@ -131,6 +188,7 @@ export const paymentProvider: PaymentProvider = env.KLASHA_PUBLIC_KEY
       env.KLASHA_ENCRYPTION_KEY,
       env.KLASHA_ACCOUNT_EMAIL,
       env.KLASHA_ACCOUNT_PASSWORD,
+      env.KLASHA_BUSINESS_ID,
     )
   : new StubPaymentProvider();
 

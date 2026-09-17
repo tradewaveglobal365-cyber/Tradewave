@@ -139,3 +139,76 @@ export async function getPayoutAccount(): Promise<PayoutAccount | null> {
   const body = await authedGet<{ account: PayoutAccount | null }>('/wallet/payout-account');
   return body?.account ?? null;
 }
+
+// ── Withdrawals ──────────────────────────────────────────────────────────────
+
+export type WithdrawalStatus =
+  | 'REQUESTED'
+  | 'APPROVED'
+  | 'PAID'
+  | 'REJECTED'
+  | 'FAILED'
+  | 'CANCELLED';
+
+export interface Withdrawal {
+  id: string;
+  status: WithdrawalStatus;
+  amountCents: Cents;
+  feeCents: Cents;
+  /** What reaches the bank, in dollars: amount minus fee. */
+  netCents: Cents;
+  bankName: string;
+  accountNumberMasked: string;
+  accountName: string;
+  /** Kobo, once pinned at send time. Null while it is still an estimate. */
+  destinationAmountMinor: string | null;
+  rateMinorPerUnit: string | null;
+  failureReason: string | null;
+  rejectionReason: string | null;
+  requestedAt: string;
+  decidedAt: string | null;
+  paidAt: string | null;
+}
+
+/**
+ * Everything the withdraw screen needs, in one read.
+ *
+ * Assembled by the API rather than stitched together here from four endpoints:
+ * which of the five states the screen is in depends on all of them at once, and
+ * a page that resolves that from four separate loads shows the wrong thing
+ * while the last one is still in flight.
+ */
+/** The payout schedule, and whether it is open right now. */
+export interface WithdrawalWindow {
+  open: boolean;
+  /** ISO. When it next opens — null when it is open now or always. */
+  opensAt: string | null;
+  closesAt: string | null;
+  /** "Friday, 09:00 to 17:00" — one sentence, built server-side. */
+  schedule: string;
+  enabled: boolean;
+  daysOfWeek: number[];
+  timezone: string;
+}
+
+export interface WithdrawalContext {
+  minimumCents: Cents;
+  feeCents: Cents;
+  balanceCents: Cents;
+  window: WithdrawalWindow;
+  payoutAccount: {
+    bankName: string;
+    accountNumberMasked: string;
+    accountName: string;
+  } | null;
+  /** Set while the destination is inside its 24-hour hold. */
+  holdUntil: string | null;
+  /** Kobo per dollar, for the estimate. Null when no rate is published. */
+  rateMinorPerUnit: string | null;
+  live: Withdrawal | null;
+  history: Withdrawal[];
+}
+
+export async function getWithdrawalContext(): Promise<WithdrawalContext | null> {
+  return authedGet<WithdrawalContext>('/wallet/withdrawals');
+}

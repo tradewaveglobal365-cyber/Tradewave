@@ -9,6 +9,9 @@ import type {
   KycDecidedEmail,
   PasswordResetEmail,
   PayoutAccountChangedEmail,
+  WithdrawalRequestedEmail,
+  WithdrawalSettledEmail,
+  ReferralBonusEmail,
   VerificationEmail,
 } from './types';
 import {
@@ -18,6 +21,9 @@ import {
   kycDecidedTemplate,
   passwordResetTemplate,
   payoutAccountChangedTemplate,
+  withdrawalRequestedTemplate,
+  withdrawalSettledTemplate,
+  referralBonusTemplate,
   verificationTemplate,
 } from './templates';
 
@@ -70,6 +76,18 @@ class ConsoleEmailService implements EmailService {
     accountNumberMasked,
   }: PayoutAccountChangedEmail): Promise<void> {
     logger.info({ to, accountNumberMasked }, '[email:payout-account-changed]');
+  }
+
+  async sendWithdrawalRequested({ to, amount }: WithdrawalRequestedEmail): Promise<void> {
+    logger.info({ to, amount }, '[email:withdrawal-requested]');
+  }
+
+  async sendWithdrawalSettled({ to, paid, amount }: WithdrawalSettledEmail): Promise<void> {
+    logger.info({ to, paid, amount }, '[email:withdrawal-settled]');
+  }
+
+  async sendReferralBonus({ to, amount }: ReferralBonusEmail): Promise<void> {
+    logger.info({ to, amount }, '[email:referral-bonus]');
   }
 }
 
@@ -182,6 +200,43 @@ class ResendEmailService implements EmailService {
       accountName,
       url,
     );
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendWithdrawalRequested({
+    to,
+    firstName,
+    amount,
+    fee,
+    bankName,
+    accountNumberMasked,
+    url,
+  }: WithdrawalRequestedEmail): Promise<void> {
+    const t = withdrawalRequestedTemplate(
+      firstName,
+      amount,
+      fee,
+      bankName,
+      accountNumberMasked,
+      url,
+    );
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendWithdrawalSettled({ to, ...rest }: WithdrawalSettledEmail): Promise<void> {
+    const t = withdrawalSettledTemplate(rest);
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendReferralBonus({
+    to,
+    firstName,
+    inviteeName,
+    amount,
+    rate,
+    url,
+  }: ReferralBonusEmail): Promise<void> {
+    const t = referralBonusTemplate(firstName, inviteeName, amount, rate, url);
     await this.send(to, t.subject, t.html, t.text);
   }
 }

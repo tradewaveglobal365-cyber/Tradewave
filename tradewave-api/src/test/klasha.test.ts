@@ -101,18 +101,193 @@ describe('parsing provider amounts', () => {
   });
 });
 
-describe('webhook reference extraction', () => {
+describe('webhook classification', () => {
   const klasha = new KlashaPaymentProvider('https://example.test', 'pk', KEY_24, 'a@b.c', 'pw');
 
   it('reads tnxRef from either the envelope or the data object', () => {
-    expect(klasha.parseWebhookReference({ tnxRef: 'abc' })).toBe('abc');
-    expect(klasha.parseWebhookReference({ data: { tnxRef: 'def' } })).toBe('def');
+    expect(klasha.parseWebhookEvent({ tnxRef: 'abc' })).toEqual({
+      kind: 'collection',
+      reference: 'abc',
+    });
+    expect(klasha.parseWebhookEvent({ data: { tnxRef: 'def' } })).toEqual({
+      kind: 'collection',
+      reference: 'def',
+    });
+    expect(
+      klasha.parseWebhookEvent({ event: 'charge.completed', data: { tnxRef: 'ghi' } }),
+    ).toEqual({ kind: 'collection', reference: 'ghi' });
   });
 
   it('returns null when there is no usable reference', () => {
     for (const bad of [null, undefined, 'string', 42, {}, { tnxRef: 123 }, { tnxRef: '' }]) {
-      expect(klasha.parseWebhookReference(bad)).toBeNull();
+      expect(klasha.parseWebhookEvent(bad)).toBeNull();
     }
+  });
+
+  /**
+   * Klasha identifies a payout by `reference` and a collection by `tnxRef`, on
+   * the same webhook URL. Reading a reference without first reading the kind is
+   * how an outbound transfer gets fed to the code that credits wallets.
+   */
+  it('classifies a payout by its event, and reads reference rather than tnxRef', () => {
+    expect(
+      klasha.parseWebhookEvent({
+        event: 'payout',
+        data: { reference: 'kbtr-3857-011', status: 'successful' },
+      }),
+    ).toEqual({ kind: 'payout', reference: 'kbtr-3857-011', state: 'successful' });
+
+    expect(
+      klasha.parseWebhookEvent({
+        event: 'payout',
+        data: { reference: 'kbtr-9', status: 'failed' },
+      }),
+    ).toEqual({ kind: 'payout', reference: 'kbtr-9', state: 'failed' });
+  });
+
+  it('never reports a payout as a collection, even when one carries a tnxRef', () => {
+    const event = klasha.parseWebhookEvent({
+      event: 'payout',
+      data: { reference: 'kbtr-1', tnxRef: 'looks-like-a-deposit', status: 'successful' },
+    });
+    expect(event?.kind).toBe('payout');
+    expect(event).not.toMatchObject({ reference: 'looks-like-a-deposit' });
+  });
+
+  it('maps an unrecognised status to pending rather than failed', () => {
+    // Pending makes us look again; failed hands money back. A word we have
+    // never seen before must not do the second one.
+    const event = klasha.parseWebhookEvent({
+      event: 'payout',
+      data: { reference: 'kbtr-2', status: 'something-new' },
+    });
+    expect(event).toEqual({ kind: 'payout', reference: 'kbtr-2', state: 'pending' });
+  });
+
+  it('ignores event kinds it has no interest in', () => {
+    expect(
+      klasha.parseWebhookEvent({ event: 'refund.completed', data: { tnxRef: 'r1' } }),
+    ).toBeNull();
+  });
+});
+
+describe('sending a payout', () => {
+  const BUSINESS = 'biz-77';
+
+  /** Stands in for login + the payout call, in that order. */
+  function mockFetch(payout: { status: number; body: unknown }) {
+    return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/auth/account/v2/login')) {
+        return new Response(JSON.stringify({ data: { token: 'tok' } }), { status: 200 });
+      }
+      return new Response(JSON.stringify(payout.body), { status: payout.status });
+    });
+  }
+
+  function provider() {
+    // A fresh provider each time: a shared one caches its token, so a header
+    // assertion against it would pass vacuously.
+    return new KlashaPaymentProvider(
+      'https://example.test',
+      'pk',
+      KEY_24,
+      'a@b.c',
+      'pw',
+      BUSINESS,
+    );
+  }
+
+  const input = {
+    requestId: 'twd_abc',
+    amountMinor: 4_900_000n, // ₦49,000
+    currency: 'NGN',
+    country: 'NG',
+    bankCode: '044',
+    bankName: 'Access Bank',
+    accountNumber: '0123456789',
+    accountName: 'JOSHUA OKOGHIE',
+    description: 'Tradewave withdrawal',
+  };
+
+  it('posts an encrypted body to the business payout path, with their headers', async () => {
+    const fetchSpy = mockFetch({
+      status: 200,
+      body: { data: { reference: 'kbtr-1', payoutStatus: 'pending' } },
+    });
+
+    const result = await provider().sendPayout(input);
+    expect(result).toEqual({ state: 'sent', providerRef: 'kbtr-1' });
+
+    const [url, init] = fetchSpy.mock.calls[1] as [string, RequestInit];
+    expect(url).toBe(
+      `https://example.test/wallet/merchant/${BUSINESS}/bank/transfer/v2/request`,
+    );
+
+    const headers = init.headers as Record<string, string>;
+    expect(headers['x-auth-token']).toBe('pk');
+    expect(headers.Authorization).toBe('Bearer tok');
+
+    // The body is 3DES-encrypted, unlike the resolve call on the same docs page.
+    const sent = JSON.parse(String(init.body)) as { message: string };
+    const payload = JSON.parse(decryptPayload(sent.message, KEY_24)) as Record<string, unknown>;
+    expect(payload).toEqual({
+      // Whole NAIRA as a number, not kobo — their field, their unit.
+      amount: 49_000,
+      country: 'NG',
+      currency: 'NGN',
+      bankCode: '044',
+      bankName: 'Access Bank',
+      accountNumber: '0123456789',
+      accountName: 'JOSHUA OKOGHIE',
+      requestId: 'twd_abc',
+      description: 'Tradewave withdrawal',
+    });
+  });
+
+  it('reports a 4xx as refused, carrying the provider’s own words', async () => {
+    mockFetch({ status: 400, body: { error: 'Insufficient wallet balance' } });
+
+    const result = await provider().sendPayout(input);
+    expect(result).toEqual({ state: 'refused', reason: 'Insufficient wallet balance' });
+  });
+
+  /**
+   * The distinction the whole design rests on. A 4xx means the money did not
+   * move and can be given back; a 5xx or a dropped socket means we do not know,
+   * and returning the money there is how somebody gets paid twice.
+   */
+  it('THROWS on a 5xx rather than reporting a refusal', async () => {
+    mockFetch({ status: 502, body: { message: 'Bad gateway' } });
+    await expect(provider().sendPayout(input)).rejects.toThrow();
+  });
+
+  it('throws on a network failure rather than reporting a refusal', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (i) => {
+      if (String(i).includes('/auth/account/v2/login')) {
+        return new Response(JSON.stringify({ data: { token: 'tok' } }), { status: 200 });
+      }
+      throw new TypeError('socket hang up');
+    });
+    await expect(provider().sendPayout(input)).rejects.toThrow();
+  });
+
+  it('refuses to send a fraction of a naira rather than truncating it', async () => {
+    mockFetch({ status: 200, body: { data: {} } });
+    await expect(
+      provider().sendPayout({ ...input, amountMinor: 4_900_050n }),
+    ).rejects.toThrow(/whole number of naira/);
+  });
+
+  it('refuses to build a payout URL with no business id', async () => {
+    const noBusiness = new KlashaPaymentProvider(
+      'https://example.test',
+      'pk',
+      KEY_24,
+      'a@b.c',
+      'pw',
+    );
+    await expect(noBusiness.sendPayout(input)).rejects.toThrow(/KLASHA_BUSINESS_ID/);
   });
 });
 

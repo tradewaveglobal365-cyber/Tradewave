@@ -89,3 +89,17 @@ export const depositAccountLimiter = limiter({ windowMs: 60 * 1000, limit: 20 })
  * costs us an authenticated lookup against the provider.
  */
 export const depositWebhookLimiter = limiter({ windowMs: 60 * 1000, limit: 120 });
+
+/**
+ * Asking for money to be sent out.
+ *
+ * Tight, and keyed on the authenticated user rather than the IP — so it MUST be
+ * mounted after requireAuth. The service already refuses a second withdrawal
+ * while one is live, so anything above a handful an hour is somebody probing
+ * the balance guard rather than an investor changing their mind.
+ */
+export const withdrawalLimiter = limiter({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  keyGenerator: (req) => req.auth?.userId ?? req.ip ?? 'unknown',
+});

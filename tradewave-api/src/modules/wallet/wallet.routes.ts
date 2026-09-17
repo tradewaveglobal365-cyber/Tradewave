@@ -2,12 +2,22 @@ import { Router, type Request, type Response } from 'express';
 import { requireAuth, requireKyc } from '../../middleware/auth';
 import { logger } from '../../lib/logger';
 import { validateBody } from '../../middleware/validate';
-import { depositAccountLimiter, depositWebhookLimiter } from '../../middleware/rate-limit';
-import { banksUnavailable, unauthorized } from '../../lib/errors';
+import {
+  depositAccountLimiter,
+  depositWebhookLimiter,
+  withdrawalLimiter,
+} from '../../middleware/rate-limit';
+import { badRequest, banksUnavailable, unauthorized } from '../../lib/errors';
 import { paymentProvider } from '../../services/payments';
 import { getWallet } from './wallet.service';
 import * as payout from './payout.service';
-import { setPayoutAccountSchema, type SetPayoutAccountInput } from './schemas';
+import {
+  requestWithdrawalSchema,
+  setPayoutAccountSchema,
+  type RequestWithdrawalInput,
+  type SetPayoutAccountInput,
+} from './schemas';
+import * as withdrawal from './withdrawal.service';
 import {
   creditFromReference,
   getDepositAccount,
@@ -54,11 +64,22 @@ walletRouter.get(
  * Provider callback. No auth — and, unlike the KYC webhook, no signature either:
  * Klasha does not sign these, so this endpoint is genuinely open.
  *
- * That is survivable only because of what it does NOT do. It reads a reference
- * out of the body and discards everything else, including the amount. The
- * credit is built from an authenticated read against the provider, so the worst
- * a forged request achieves is making us look up a transaction that either
- * exists already or does not exist at all.
+ * That is survivable only because of what it does NOT do. It reads a KIND and a
+ * reference out of the body and discards everything else, including the amount.
+ * The credit is built from an authenticated read against the provider, so the
+ * worst a forged request achieves is making us look up a transaction that
+ * either exists already or does not exist at all.
+ *
+ * ── The path name is historical ───────────────────────────────────────────
+ * This receives EVERY Klasha event, not just deposits: they post collections,
+ * payouts and refunds to one configured URL. The path still says /deposits
+ * because it is the URL set in their dashboard and renaming it means
+ * reconfiguring the integration for no gain.
+ *
+ * The dispatch below is on `kind` and nothing else. A payout event can only
+ * ever reach settleFromWebhook; there is no path from one to a wallet credit,
+ * which matters because money arriving and money leaving look similar enough
+ * in these payloads to be confused by anything less explicit.
  *
  * Always answers 200. Providers retry any non-2xx, so a 404 for a stale
  * reference becomes a retry storm, and an error body would tell a prober
@@ -68,8 +89,11 @@ walletRouter.post(
   '/deposits/webhook',
   depositWebhookLimiter,
   async (req: Request, res: Response) => {
-    const reference = paymentProvider.parseWebhookReference(req.body);
-    if (reference) await creditFromReference(reference);
+    const event = paymentProvider.parseWebhookEvent(req.body);
+    if (event?.kind === 'collection') await creditFromReference(event.reference);
+    else if (event?.kind === 'payout') {
+      await withdrawal.settleFromWebhook(event.reference, event.state);
+    }
     res.status(200).json({ received: true });
   },
 );
@@ -116,5 +140,55 @@ walletRouter.put(
     if (!req.auth) throw unauthorized();
     const input = req.body as SetPayoutAccountInput;
     res.json({ account: await payout.setPayoutAccount(req.auth.userId, input) });
+  },
+);
+
+// ── Withdrawals ─────────────────────────────────────────────────────────────
+
+/**
+ * Everything the withdraw screen needs: balance, destination, limits, the live
+ * request and the history. One round trip, because which of the five states the
+ * screen is in depends on all of them at once.
+ */
+walletRouter.get('/withdrawals', requireAuth, async (req: Request, res: Response) => {
+  if (!req.auth) throw unauthorized();
+  res.json(await withdrawal.getWithdrawalContext(req.auth.userId));
+});
+
+/**
+ * Ask for money to be sent out.
+ *
+ * requireKyc for the same reason the payout account needs it: we only ever pay
+ * an account that matches a verified identity, and an unverified user has no
+ * such account to pay.
+ *
+ * POST rather than PUT — PUT is missing from the CORS methods allowlist in
+ * app.ts and only works today because the browser goes through the Next.js
+ * same-origin rewrite.
+ */
+walletRouter.post(
+  '/withdrawals',
+  requireAuth,
+  requireKyc,
+  withdrawalLimiter,
+  validateBody(requestWithdrawalSchema),
+  async (req: Request, res: Response) => {
+    if (!req.auth) throw unauthorized();
+    const { amountCents } = req.body as RequestWithdrawalInput;
+    res
+      .status(201)
+      .json({ withdrawal: await withdrawal.requestWithdrawal(req.auth.userId, amountCents) });
+  },
+);
+
+/** Changing their mind, while nothing has been sent. */
+walletRouter.post(
+  '/withdrawals/:id/cancel',
+  requireAuth,
+  async (req: Request, res: Response) => {
+    if (!req.auth) throw unauthorized();
+    const id = req.params.id;
+    if (typeof id !== 'string' || !id) throw badRequest('An id is required.');
+    res.json({ withdrawal: await withdrawal.cancelWithdrawal(req.auth.userId, id) });
   },
 );

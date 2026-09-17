@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { AlertCircle, Receipt, ShieldCheck } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Clock, Receipt, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader } from '@/components/dashboard/page-header';
 import { AddFundsPanel } from '@/components/wallet/add-funds-panel';
-import { getDepositAccount, getWallet } from '@/lib/wallet';
+import { getDepositAccount, getWallet, getWithdrawalContext } from '@/lib/wallet';
 import { getCurrentUser } from '@/lib/session';
-import { formatAed, formatUsd } from '@/lib/money';
+import { formatAed, formatNgn, formatUsd } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'Wallet · Tradewave' };
 
@@ -25,10 +25,11 @@ export default async function WalletPage() {
   // status itself rather than inferred from a failed request. Fetched alongside
   // the wallet so an unverified user still gets their balance rather than a
   // blank page.
-  const [user, wallet, deposit] = await Promise.all([
+  const [user, wallet, deposit, withdrawals] = await Promise.all([
     getCurrentUser(),
     getWallet(),
     getDepositAccount(),
+    getWithdrawalContext(),
   ]);
   const balanceCents = wallet?.balanceCents ?? '0';
   const entries = wallet?.entries ?? [];
@@ -36,6 +37,7 @@ export default async function WalletPage() {
   // kycStatus is the authority on this, not the deposit-account read. A
   // verified investor must never be told to verify because Klasha timed out.
   const verified = user?.kycStatus === 'VERIFIED';
+  const live = withdrawals?.live ?? null;
 
   return (
     <div>
@@ -90,7 +92,51 @@ export default async function WalletPage() {
             </Panel>
           )}
         </div>
+
+        {/* Taking money out lives on its own screen rather than expanding
+            here: it is a form with a confirmation step, and the funding panel
+            above already owns this card. A link keeps both reachable without
+            either one burying the other. */}
+        {verified && withdrawals ? (
+          <div className="mt-4 border-t border-hairline pt-4">
+            <Button asChild variant="outline" className="h-10 gap-1.5">
+              <Link href="/wallet/withdraw">
+                <ArrowUpRight className="size-3.5" />
+                Withdraw
+              </Link>
+            </Button>
+          </div>
+        ) : null}
       </section>
+
+      {/* One in flight is the thing somebody opens this page to check on, so it
+          sits above the ledger rather than inside it — the ledger row for it
+          says only that money left, not where it has got to. */}
+      {live ? (
+        <section className="mt-6 rounded-xl border border-pending/40 bg-pending/5 px-4 py-3.5">
+          <div className="flex items-start gap-3">
+            <Clock className="mt-0.5 size-4 shrink-0 text-pending" />
+            <div className="min-w-0 flex-1">
+              <p className="text-[0.8125rem] font-medium text-foreground">
+                {formatUsd(live.amountCents)} withdrawal{' '}
+                {live.status === 'REQUESTED' ? 'waiting to be reviewed' : 'on its way'}
+              </p>
+              <p className="mt-0.5 text-[0.75rem] leading-relaxed text-muted-foreground">
+                To {live.bankName} {live.accountNumberMasked}
+                {live.destinationAmountMinor
+                  ? ` · sending ${formatNgn(live.destinationAmountMinor)}`
+                  : ''}
+              </p>
+            </div>
+            <Link
+              href="/wallet/withdraw"
+              className="shrink-0 text-[0.75rem] font-medium text-brand-700 transition-colors hover:text-brand-900"
+            >
+              Details
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-6">
         <h2 className="mb-3 text-[1rem] font-semibold text-foreground">Transactions</h2>
