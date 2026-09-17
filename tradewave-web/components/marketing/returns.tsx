@@ -1,9 +1,10 @@
 import { RETURNS, formatBps } from '@/content/home';
+import type { MarketingStats } from '@/lib/public-properties';
 import { Section, SectionHeader } from './section';
 import { Reveal } from './reveal';
 import { ReturnsCalculator } from './returns-calculator';
 
-export function Returns() {
+export function Returns({ stats }: { stats: MarketingStats | null }) {
   return (
     <Section id="returns" tone="canvas">
       <div className="grid gap-12 lg:grid-cols-[0.9fr_1fr] lg:items-start lg:gap-16">
@@ -11,7 +12,13 @@ export function Returns() {
           <SectionHeader
             eyebrow={RETURNS.eyebrow}
             heading={RETURNS.heading}
-            description={RETURNS.description}
+            description={
+              // The range is quoted only when there are listings to derive it
+              // from. It used to be computed from six invented ones.
+              stats
+                ? `Current listings yield between ${formatBps(stats.minYieldBps)} and ${formatBps(stats.maxYieldBps)} a year. ${RETURNS.description}`
+                : RETURNS.description
+            }
           />
 
           <ul className="mt-10 space-y-px overflow-hidden rounded-xl border border-hairline bg-hairline">
@@ -43,7 +50,7 @@ export function Returns() {
         </div>
 
         <Reveal delay={120}>
-          <ReturnsCalculator />
+          <ReturnsCalculator stats={stats} />
         </Reveal>
       </div>
     </Section>

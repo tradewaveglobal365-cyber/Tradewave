@@ -3,6 +3,8 @@ import Image from 'next/image';
 import { ArrowRight, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { HERO } from '@/content/home';
+import { formatUsd } from '@/lib/money';
+import type { MarketingStats } from '@/lib/public-properties';
 import { Reveal } from './reveal';
 
 /**
@@ -20,7 +22,7 @@ import { Reveal } from './reveal';
  * auto-invest section and the CTA band. Keeping it OUT of the hero is what
  * makes those sections land as contrast rather than as more of the same.
  */
-export function Hero() {
+export function Hero({ stats }: { stats: MarketingStats | null }) {
   return (
     <section id="hero" className="relative isolate overflow-hidden bg-canvas">
       {/*
@@ -67,7 +69,13 @@ export function Hero() {
           </div>
 
           <ul className="mt-10 flex flex-wrap gap-x-6 gap-y-3 border-t border-hairline pt-7">
-            {HERO.chips.map((chip) => (
+            {/* The entry price is a real figure from the cheapest current
+                listing, or absent. "From $250" used to be hardcoded here and
+                was true of nothing. */}
+            {[
+              ...HERO.chips,
+              ...(stats ? [`From ${formatUsd(String(stats.minTicketCents))}`] : []),
+            ].map((chip) => (
               <li
                 key={chip}
                 className="flex items-center gap-2 text-[0.8125rem] font-medium text-muted-foreground"

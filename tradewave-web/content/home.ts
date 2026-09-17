@@ -75,104 +75,25 @@ export function formatTerm(months: number): string {
 // to six assets that do not exist. Replace every entry with real, title-verified
 // listings and real photography before this page goes in front of an investor.
 
-export const PROPERTIES = [
-  {
-    slug: 'palm-jumeirah-signature-villa',
-    title: 'Palm Jumeirah Signature Villa',
-    summary: '5-bedroom beachfront villa on the Palm Jumeirah fronds.',
-    area: 'Palm Jumeirah',
-    city: 'Dubai',
-    totalValueUsd: 5_000_000,
-    minInvestmentUsd: 2_500,
-    annualReturnBps: 690,
-    termMonths: 36,
-    image: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?w=800&q=75',
-    placeholder: true,
-  },
-  {
-    slug: 'business-bay-office-floor',
-    title: 'Business Bay Office Floor',
-    summary: 'Full commercial floor in a Grade A Business Bay tower.',
-    area: 'Business Bay',
-    city: 'Dubai',
-    totalValueUsd: 1_960_000,
-    minInvestmentUsd: 1_250,
-    annualReturnBps: 1050,
-    termMonths: 36,
-    image: 'https://images.unsplash.com/photo-1526495124232-a04e1849168c?w=800&q=75',
-    placeholder: true,
-  },
-  {
-    slug: 'dubai-marina-tower-unit',
-    title: 'Marina Tower Residence',
-    summary: '1-bedroom high-floor unit overlooking Dubai Marina.',
-    area: 'Dubai Marina',
-    city: 'Dubai',
-    totalValueUsd: 450_000,
-    minInvestmentUsd: 250,
-    annualReturnBps: 920,
-    termMonths: 18,
-    image: 'https://images.unsplash.com/photo-1528702748617-c64d49f918af?w=800&q=75',
-    placeholder: true,
-  },
-  {
-    slug: 'downtown-burj-views-apartment',
-    title: 'Burj Views Apartment',
-    summary: '2-bedroom apartment with Burj Khalifa views in Downtown Dubai.',
-    area: 'Downtown Dubai',
-    city: 'Dubai',
-    totalValueUsd: 775_000,
-    minInvestmentUsd: 500,
-    annualReturnBps: 780,
-    termMonths: 24,
-    image: 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=800&q=75',
-    placeholder: true,
-  },
-  {
-    slug: 'jvc-townhouse-cluster',
-    title: 'JVC Townhouse Cluster',
-    summary: 'Four 3-bedroom townhouses in Jumeirah Village Circle.',
-    area: 'Jumeirah Village Circle',
-    city: 'Dubai',
-    totalValueUsd: 1_470_000,
-    minInvestmentUsd: 750,
-    annualReturnBps: 880,
-    termMonths: 24,
-    image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800&q=75',
-    placeholder: true,
-  },
-  {
-    slug: 'dubai-creek-harbour-residence',
-    title: 'Creek Harbour Residence',
-    summary: '2-bedroom waterfront apartment in Dubai Creek Harbour.',
-    area: 'Dubai Creek Harbour',
-    city: 'Dubai',
-    totalValueUsd: 570_000,
-    minInvestmentUsd: 400,
-    annualReturnBps: 740,
-    termMonths: 30,
-    image: 'https://images.unsplash.com/photo-1582407947304-fd86f028f716?w=800&q=75',
-    placeholder: true,
-  },
-] as const;
-
-// ── Portfolio facts ──────────────────────────────────────────────────────────
-//
-// Computed from PROPERTIES rather than hand-maintained. These four numbers feed
-// the hero chip, the Returns range, the trust bar and the calculator bounds, so
-// hardcoding them meant four places to remember on every listing change. Edit
-// the list above and everything downstream follows.
-
-/** Business Bay office floor, currently the highest-yielding asset. */
-export const MAX_YIELD_BPS = Math.max(...PROPERTIES.map((p) => p.annualReturnBps));
-/** Palm Jumeirah villa, the lowest — prime assets yield less, as they should. */
-export const MIN_YIELD_BPS = Math.min(...PROPERTIES.map((p) => p.annualReturnBps));
-/** Mean of the listed rates. */
-export const AVG_YIELD_BPS = Math.round(
-  PROPERTIES.reduce((sum, p) => sum + p.annualReturnBps, 0) / PROPERTIES.length,
-);
-/** The lowest entry ticket anywhere in the portfolio. */
-export const MIN_TICKET_USD = Math.min(...PROPERTIES.map((p) => p.minInvestmentUsd));
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THERE IS NO LIST OF PROPERTIES IN THIS FILE ANY MORE.
+ *
+ * There used to be six, hardcoded, complete with prices, yields and a working
+ * "start investing" link — because this page prerenders and a static page
+ * cannot read a database. None of them existed. The homepage now regenerates
+ * hourly from the real listings API instead (lib/public-properties.ts), so what
+ * is advertised here is what is actually for sale, and there is no second copy
+ * of the data to keep in sync.
+ *
+ * Anything in this file that would quote a NUMBER about current listings — an
+ * entry price, a yield range — has been removed for the same reason. Those
+ * figures are passed in from real data where they are shown at all, and when
+ * there are no listings the sentence that would have quoted one is simply not
+ * rendered. A fallback constant would just be the old invented number wearing
+ * a different hat.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 
 export const SITE = {
   name: 'Tradewave',
@@ -203,11 +124,9 @@ export const HERO = {
     'Tradewave divides freehold Dubai property into fractions you can actually afford. Title-verified before listing, registered with the Dubai Land Department, and held in your name.',
   primaryCta: { label: 'Create your account', href: '/signup' },
   secondaryCta: { label: 'See how it works', href: '#how-it-works' },
-  chips: [
-    'DLD-registered title',
-    'Freehold ownership',
-    `From ${formatUsd(MIN_TICKET_USD)}`,
-  ],
+  // The entry-price chip is appended by hero.tsx from real listing data, so it
+  // is absent rather than invented when nothing is listed.
+  chips: ['DLD-registered title', 'Freehold ownership'],
   image: {
     // Reuses a photo already vetted for the Dubai seed data.
     src: 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1600&q=75',
@@ -222,14 +141,14 @@ export const TRUST_BAR = {
     { label: 'Dubai Land Department', short: 'DLD' },
     { label: 'Real Estate Regulatory Agency', short: 'RERA' },
   ],
-  stats: [
-    // TODO(content): invented. Replace with real platform figures before launch.
-    { value: '$13M', label: 'Capital deployed', placeholder: true },
-    // TODO(content): invented. Replace with the real investor count.
-    { value: '2,400+', label: 'Investors onboarded', placeholder: true },
-    // Derived: mean of the six seeded property rates. Safe to ship.
-    { value: formatBps(AVG_YIELD_BPS), label: 'Average annual yield', placeholder: false },
-  ],
+  // "$13M capital deployed" and "2,400+ investors onboarded" used to sit here.
+  // Both were invented, and both were flagged in this file as invented. A
+  // fabricated traction figure on a public investment page is not a content
+  // TODO, so they are deleted rather than carried forward with a comment.
+  //
+  // trust-bar.tsx renders figures derived from real listings instead, and
+  // nothing at all when there are none.
+  stats: [],
 } as const;
 
 // ── About ────────────────────────────────────────────────────────────────────
@@ -374,8 +293,10 @@ export const AUTO_INVEST = {
 export const RETURNS = {
   eyebrow: 'Returns',
   heading: 'What the portfolio actually pays.',
-  description: `Current listings yield between ${formatBps(MIN_YIELD_BPS)} and ${formatBps(MAX_YIELD_BPS)} a year. Prime assets sit at the lower end and commercial floors at the upper — the spread is the point, not a mistake.`,
-  range: { min: MIN_YIELD_BPS, max: MAX_YIELD_BPS, avg: AVG_YIELD_BPS },
+  // The live range is rendered by returns.tsx from real listings. This sentence
+  // has to stand up on its own when there are none.
+  description:
+    'Prime assets yield less than commercial floors, and both are listed side by side. The spread is the point, not a mistake.',
   bands: [
     { label: 'Prime residential', example: 'Palm Jumeirah, Downtown', bps: 690 },
     { label: 'Mid-market residential', example: 'JVC, Creek Harbour', bps: 880 },
@@ -385,11 +306,14 @@ export const RETURNS = {
     heading: 'Project your return',
     description:
       'Move the sliders to see what a holding would be worth at the end of its term.',
-    amount: { min: MIN_TICKET_USD, max: 500_000, step: 500, default: 25_000 },
+    // Bounds a slider needs to function, not claims about anything listed. The
+    // yield presets are replaced with the real range whenever there is one —
+    // see returns-calculator.tsx — and the disclaimer below covers the rest.
+    amount: { min: 250, max: 500_000, step: 500, default: 25_000 },
     terms: [12, 24, 36],
     defaultTermMonths: 24,
-    yields: [MIN_YIELD_BPS, AVG_YIELD_BPS, MAX_YIELD_BPS],
-    defaultYieldBps: AVG_YIELD_BPS,
+    yields: [600, 900, 1200],
+    defaultYieldBps: 900,
     disclaimer:
       'Illustrative only. Projections use the declared rate for a property over its stated term and are not a guarantee. Property investment carries risk, including loss of capital; past performance does not indicate future returns.',
   },
@@ -458,7 +382,7 @@ export const COMPARISON = {
     {
       label: 'Entry cost',
       cells: [
-        `From ${formatUsd(MIN_TICKET_USD)}`,
+        'A share, not a whole property',
         'Seven figures, plus fees and transfer costs',
         'Low — a share price',
         'Anything',
@@ -505,43 +429,18 @@ export const COMPARISON = {
   note: 'The trade-off is liquidity. Buying outright leaves you free to sell whenever a buyer appears; a Tradewave holding runs to the end of its term. Invest on the assumption your capital is committed for the full period.',
 } as const;
 
-// ── Testimonials ─────────────────────────────────────────────────────────────
+// ── Testimonials ────────────────────────────────────────────────────────────
 //
-// TODO(content): ALL THREE ARE INVENTED. Replace with real, attributable
-// quotes before launch, or delete the section.
+// REMOVED. Four investor quotes used to sit here, attributed to people who do
+// not exist. This file said so itself — the section carried `placeholder: true`
+// and a note explaining that monograms were used instead of stock photographs
+// because "pairing a fabricated quote with a stock photograph of a real person
+// is a materially worse thing to ship than the quote alone".
 //
-// Rendered as initials monograms rather than photographs — pairing a fabricated
-// quote with a stock photograph of a real person is a materially worse thing to
-// ship than the quote alone.
-
-export const TESTIMONIALS = {
-  eyebrow: 'Investors',
-  heading: 'Why they started.',
-  placeholder: true,
-  items: [
-    {
-      quote:
-        'I have rented in Marina for nine years and watched the building I live in double in value. This is the first time I have been able to own any part of that.',
-      name: 'Amira K.',
-      role: 'Product designer',
-      location: 'Dubai Marina',
-    },
-    {
-      quote:
-        'I wanted property exposure without becoming a landlord. No tenants, no service charges, no 2am phone calls — I check the ledger once a month and that is the whole job.',
-      name: 'Daniel O.',
-      role: 'Founder, logistics SME',
-      location: 'Business Bay',
-    },
-    {
-      quote:
-        'Investing into Dubai from abroad usually means a lawyer, a power of attorney and three months. I was verified and holding a fraction in an afternoon.',
-      name: 'Priya S.',
-      role: 'Consultant',
-      location: 'London, UK',
-    },
-  ],
-} as const;
+// Both are the same problem. A fabricated endorsement on a page selling an
+// investment is not a content placeholder, so the section is gone rather than
+// carried forward behind a flag. Put it back when there are real investors who
+// have agreed to be quoted.
 
 // ── FAQ ──────────────────────────────────────────────────────────────────────
 
@@ -551,7 +450,7 @@ export const FAQ = {
   items: [
     {
       q: 'What is the minimum investment?',
-      a: `It depends on the property. The lowest entry ticket currently listed is ${formatUsd(MIN_TICKET_USD)}; larger prime assets set a higher minimum. Every listing shows its minimum before you commit.`,
+      a: 'It depends on the property — larger prime assets set a higher minimum than mid-market ones. Every listing shows its own minimum, in full, before you commit a dollar to it.',
     },
     {
       q: 'What exactly do I own?',
@@ -608,8 +507,8 @@ export const CTA = {
 // shares the row with a button.
 
 export const STICKY_CTA = {
-  label: 'Own a share from',
-  value: formatUsd(MIN_TICKET_USD),
+  label: 'Own a share of',
+  value: 'Dubai property',
   action: { label: 'Get started', href: '/signup' },
 } as const;
 

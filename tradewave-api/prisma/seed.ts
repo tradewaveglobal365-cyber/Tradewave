@@ -23,11 +23,16 @@ import { dollarsToCents } from '../src/lib/money';
  * of them depicts the property described. Replace every one with real listing
  * photography before this is shown to an investor.
  *
- * ⚠️  A SECOND COPY OF THIS LIST EXISTS. The public marketing homepage shows
- * these properties too, and it is prerendered at build time so it cannot read
- * the database. It carries its own copy in the web repo at
- * `tradewave-web/content/home.ts` (the `PROPERTIES` array). EDIT BOTH — the two
- * will not warn you when they disagree.
+ * There is no longer a second copy of this list. The public marketing homepage
+ * used to carry its own hardcoded set in `tradewave-web/content/home.ts`,
+ * because it prerendered at build time and could not read the database. It now
+ * regenerates from the listings API every hour instead, so seeding here is the
+ * only place listings come from — and an empty database renders an honest
+ * "listings are being prepared" state rather than six invented properties.
+ *
+ * This seed UPSERTS on slug, so it is safe to re-run. It will overwrite any
+ * admin edits made to a property with a matching slug, which is why it is a
+ * deliberate command and not part of the deploy.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 const PROPERTIES = [

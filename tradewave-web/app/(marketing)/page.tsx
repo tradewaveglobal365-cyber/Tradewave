@@ -9,19 +9,27 @@ import { WhyDubai } from '@/components/marketing/why-dubai';
 import { AutoInvest } from '@/components/marketing/auto-invest';
 import { Returns } from '@/components/marketing/returns';
 import { Security } from '@/components/marketing/security';
-import { Testimonials } from '@/components/marketing/testimonials';
 import { Faq } from '@/components/marketing/faq';
 import { CtaBand } from '@/components/marketing/cta-band';
+import { deriveStats, getShowcaseProperties } from '@/lib/public-properties';
 
 /**
  * Marketing homepage.
  *
- * Pure content — no API calls, no cookies, no request-time data of any kind, so
- * the whole route prerenders at build time. `npm run build` must list `/` as
- * `○ (Static)`; if it ever shows as dynamic, something has leaked a
- * request-scoped dependency in here.
+ * Still served as static HTML, but REGENERATED from the listings API rather
+ * than prerendered once from hardcoded content. That is the whole point: this
+ * page used to carry its own copy of six properties, because a purely static
+ * page cannot read a database — and those six did not exist. Incremental
+ * regeneration gets the speed of a static page without the invented data.
  *
- * All copy lives in content/home.ts.
+ * No cookies and no request-scoped data, so it must never become per-request
+ * dynamic. `npm run build` should list `/` as a static or revalidating route;
+ * if it ever shows as fully dynamic, something has leaked a request-scoped
+ * dependency in here.
+ *
+ * Copy lives in content/home.ts. NUMBERS about current listings do not — they
+ * are derived here from real data and passed down, and when there is nothing
+ * listed the sentences that would have quoted one are not rendered at all.
  *
  * Section grounds alternate canvas / surface so no two adjacent blocks share a
  * background, with the two dark sections as the punctuation:
@@ -37,8 +45,12 @@ import { CtaBand } from '@/components/marketing/cta-band';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
 
 const title = 'Tradewave · Fractional Dubai real estate investment';
+// No figures. This is static metadata on a page whose listings change, and the
+// "$250" and "6.9%-10.5%" it used to quote were derived from six properties
+// that did not exist. A number in a meta description is also the one piece of
+// copy nobody re-reads when the listings change.
 const description =
-  'Own a share of freehold Dubai property from $250. Title-verified listings, registered with the Dubai Land Department, yielding 6.9%–10.5% a year.';
+  'Own a share of freehold Dubai real estate. Title-verified listings registered with the Dubai Land Department, with the minimum and the rate shown in full on every property.';
 
 export const metadata: Metadata = {
   // app/layout.tsx uses `template: '%s'`, so this is the full title as written.
@@ -57,22 +69,34 @@ export const metadata: Metadata = {
   twitter: { card: 'summary_large_image', title, description },
 };
 
-export default function HomePage() {
+/**
+ * How long the page may quote listing figures before it is rebuilt.
+ *
+ * A literal, not the shared constant: Next statically analyses segment config
+ * exports at build time and rejects anything it cannot read without running
+ * the module. SHOWCASE_REVALIDATE_SECONDS still drives the fetch itself, where
+ * a variable is fine — keep the two in step.
+ */
+export const revalidate = 3600;
+
+export default async function HomePage() {
+  const properties = await getShowcaseProperties();
+  const stats = deriveStats(properties);
+
   return (
     <>
-      <Hero />
-      <TrustBar />
+      <Hero stats={stats} />
+      <TrustBar stats={stats} />
       <About />
       {/* Straight after About explains what a fraction IS — the visitor should
           not have to read three more abstract blocks before seeing one. */}
-      <PropertyShowcase />
+      <PropertyShowcase properties={properties} />
       <HowItWorks />
       <Comparison />
       <WhyDubai />
       <AutoInvest />
-      <Returns />
+      <Returns stats={stats} />
       <Security />
-      <Testimonials />
       <Faq />
       <CtaBand />
     </>

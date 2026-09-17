@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
+import type { MarketingStats } from '@/lib/public-properties';
 import { RETURNS, formatUsd, formatBps } from '@/content/home';
 import { cn } from '@/lib/utils';
 
@@ -25,12 +26,26 @@ function projectedReturn(principal: number, bps: number, months: number): number
   return (principal * bps * months) / (10_000 * 12);
 }
 
-export function ReturnsCalculator() {
+export function ReturnsCalculator({ stats }: { stats: MarketingStats | null }) {
   // Explicit <number>: content/home.ts is `as const`, so the defaults infer as
   // literal types and the setters would reject any other value.
   const [amount, setAmount] = useState<number>(calculator.amount.default);
   const [months, setMonths] = useState<number>(calculator.defaultTermMonths);
-  const [bps, setBps] = useState<number>(calculator.defaultYieldBps);
+  /**
+   * Yield presets, from real listings when there are any.
+   *
+   * The fallback is a plain illustrative band, not a claim: with nothing
+   * listed there is no rate to quote, and the disclaimer under this calculator
+   * already says the whole thing is illustrative. The presets used to be
+   * derived from six properties that did not exist.
+   */
+  const yieldOptions = stats
+    ? Array.from(new Set([stats.minYieldBps, stats.avgYieldBps, stats.maxYieldBps])).sort(
+        (a, b) => a - b,
+      )
+    : calculator.yields;
+
+  const [bps, setBps] = useState<number>(stats?.avgYieldBps ?? calculator.defaultYieldBps);
 
   const amountId = useId();
   const gain = projectedReturn(amount, bps, months);
@@ -87,7 +102,7 @@ export function ReturnsCalculator() {
 
         <Choice
           label="Annual yield"
-          options={calculator.yields.map((rate) => ({
+          options={yieldOptions.map((rate) => ({
             value: rate,
             label: formatBps(rate),
           }))}
