@@ -2,6 +2,7 @@ import {
   ArrowLeftRight,
   ArrowUpRight,
   Banknote,
+  CalendarClock,
   Building2,
   ShieldCheck,
   Users,
@@ -62,5 +63,11 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     label: 'Withdrawals',
     icon: ArrowUpRight,
     description: 'Money investors have asked for, waiting on somebody to release it.',
+  },
+  {
+    href: '/admin/maturities',
+    label: 'Maturities',
+    icon: CalendarClock,
+    description: 'Investments reaching the end of their term, and anything overdue.',
   },
 ];

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader } from '@/components/dashboard/page-header';
 import { getPortfolio } from '@/lib/investments';
 import { formatAed } from '@/lib/money';
-import { HoldingCard } from '@/components/dashboard/holding-card';
+import { LiveHoldingCard } from '@/components/dashboard/live-holding-card';
 
 export const metadata: Metadata = { title: 'Portfolio · Tradewave' };
 
@@ -30,7 +30,7 @@ export default async function PortfolioPage() {
 
           <div className="space-y-3">
             {portfolio.holdings.map((h) => (
-              <HoldingCard key={h.id} holding={h} />
+              <LiveHoldingCard key={h.id} holding={h} serverTime={portfolio.serverTime ?? null} />
             ))}
           </div>
 

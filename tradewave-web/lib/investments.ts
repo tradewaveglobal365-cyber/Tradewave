@@ -24,6 +24,12 @@ export interface Portfolio {
   currentValueCents: Cents;
   accruedCents: Cents;
   holdings: Holding[];
+  /**
+   * The API's own clock, ISO. The portfolio ticks accrual up live in the
+   * browser, and a device with a wrong clock would otherwise show a figure we
+   * would not pay — so the client works from the offset against this.
+   */
+  serverTime?: string;
 }
 
 export async function getPortfolio(): Promise<Portfolio | null> {

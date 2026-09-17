@@ -34,6 +34,7 @@ export function PropertyForm({ property }: { property?: AdminProperty }) {
     register,
     handleSubmit,
     watch,
+    setValue,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<PropertyFormValues>({
@@ -58,6 +59,33 @@ export function PropertyForm({ property }: { property?: AdminProperty }) {
 
   const totalPreview = parseDollarInput(watch('totalValue') ?? '');
   const minPreview = parseDollarInput(watch('minInvestment') ?? '');
+
+  /**
+   * The annual rate is what gets stored, and it is not how anyone talks about
+   * these deals — "3x over two years" is. Both boxes below edit the same
+   * underlying number, so whichever one you think in, the other follows.
+   *
+   * This is the same trick the FX rate form uses: the admin types the unit they
+   * reason in, and the conversion happens once, right here, rather than in
+   * somebody's head every time.
+   */
+  const annualPercent = Number(watch('annualReturnPercent') ?? '');
+  const months = Number(watch('termMonths') ?? '');
+  const termIsUsable = Number.isFinite(months) && months > 0;
+  const annualIsUsable = Number.isFinite(annualPercent) && annualPercent > 0;
+
+  const totalReturnPercent =
+    termIsUsable && annualIsUsable ? (annualPercent * months) / 12 : null;
+  const multiple = totalReturnPercent === null ? null : 1 + totalReturnPercent / 100;
+
+  function setFromTotalReturn(value: string) {
+    const total = Number(value);
+    if (!Number.isFinite(total) || total <= 0 || !termIsUsable) return;
+    // Round to two places: the stored value is basis points, so anything finer
+    // is discarded on save anyway and would make the two boxes disagree.
+    const derived = Math.round(((total * 12) / months) * 100) / 100;
+    setValue('annualReturnPercent', String(derived), { shouldValidate: true });
+  }
 
   async function onSubmit(values: PropertyFormValues) {
     setFormError(null);
@@ -218,12 +246,32 @@ export function PropertyForm({ property }: { property?: AdminProperty }) {
           <Field
             label="Annual return"
             error={errors.annualReturnPercent?.message}
-            hint="A percentage, e.g. 9.2"
+            hint={
+              totalReturnPercent !== null
+                ? `${totalReturnPercent.toFixed(1)}% over the full term`
+                : 'A percentage per year, e.g. 9.2'
+            }
           >
             <Input disabled={moneyLocked} inputMode="decimal" placeholder="9.2" {...register('annualReturnPercent')} />
           </Field>
           <Field label="Term" error={errors.termMonths?.message} hint="Whole months, e.g. 24">
             <Input disabled={moneyLocked} inputMode="numeric" placeholder="24" {...register('termMonths')} />
+          </Field>
+          <Field
+            label="Total return at maturity"
+            hint={
+              multiple !== null
+                ? `Investors get back ${multiple.toFixed(2)}× their money`
+                : 'Set a term first — the total depends on it'
+            }
+          >
+            <Input
+              disabled={moneyLocked || !termIsUsable}
+              inputMode="decimal"
+              placeholder="200"
+              value={totalReturnPercent === null ? '' : totalReturnPercent.toFixed(2)}
+              onChange={(e) => setFromTotalReturn(e.target.value)}
+            />
           </Field>
         </div>
       </Section>

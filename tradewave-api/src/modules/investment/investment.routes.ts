@@ -3,14 +3,29 @@ import { requireActive, requireAuth, requireKyc } from '../../middleware/auth';
 import { validateBody } from '../../middleware/validate';
 import { unauthorized } from '../../lib/errors';
 import { createInvestment, getPortfolio } from './investment.service';
+import { settleMaturedInvestments } from './maturity.service';
 import { createInvestmentSchema, type CreateInvestmentInput } from './schemas';
 
 export const investmentRouter = Router();
 
-/** Portfolio totals plus every holding, with accrual derived at request time. */
+/**
+ * Portfolio totals plus every holding, with accrual derived at request time.
+ *
+ * Settles anything that has come due on the way through. This is the read an
+ * investor makes at exactly the moment they would notice a matured holding, so
+ * hanging the sweep here means the money is spendable by the time the page
+ * renders. It is throttled internally and swallows its own failures, so a
+ * settlement problem cannot stop a portfolio loading.
+ *
+ * Also returns the server's clock. The portfolio ticks the accrued figure up
+ * live in the browser, computed from the same four inputs this uses — so the
+ * client needs our time rather than the device's, or a phone with a wrong clock
+ * shows a number we would not pay.
+ */
 investmentRouter.get('/', requireAuth, requireActive, async (req: Request, res: Response) => {
   if (!req.auth) throw unauthorized();
-  res.json(await getPortfolio(req.auth.userId));
+  await settleMaturedInvestments();
+  res.json({ ...(await getPortfolio(req.auth.userId)), serverTime: new Date().toISOString() });
 });
 
 export const investmentActionRouter = Router();

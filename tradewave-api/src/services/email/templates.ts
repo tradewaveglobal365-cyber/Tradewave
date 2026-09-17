@@ -316,6 +316,53 @@ export function referralBonusTemplate(
   };
 }
 
+export function investmentMaturedTemplate(
+  firstName: string,
+  propertyTitle: string,
+  principal: string,
+  earned: string,
+  total: string,
+  url: string,
+) {
+  return {
+    subject: `Your investment matured — ${total} is in your wallet`,
+    html: shell(
+      'Your investment matured',
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, your investment in ${escapeHtml(propertyTitle)} has reached the end of its term. Your money is back in your wallet, with what it earned.</p>
+       ${rows([
+         ['Principal returned', principal],
+         ['Return earned', earned],
+         ['Total', total],
+       ])}
+       <p style="margin:20px 0 0;">You can invest it again or withdraw it, like any other balance.</p>`,
+      { label: 'View your wallet', url },
+    ),
+    text: `Hi ${firstName}, your investment in ${propertyTitle} has reached the end of its term.\n\nPrincipal returned: ${principal}\nReturn earned: ${earned}\nTotal: ${total}\n\nIt is back in your wallet — invest it again or withdraw it.\n\n${url}`,
+  };
+}
+
+export function passwordChangedTemplate(
+  firstName: string,
+  otherSessionsEnded: number,
+  resetUrl: string,
+) {
+  const devices =
+    otherSessionsEnded === 0
+      ? 'No other devices were signed in.'
+      : `${otherSessionsEnded} other ${otherSessionsEnded === 1 ? 'device was' : 'devices were'} signed out.`;
+
+  return {
+    subject: 'Your Tradewave password was changed',
+    html: shell(
+      'Your password was changed',
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, the password on your Tradewave account has just been changed. ${escapeHtml(devices)}</p>
+       <p style="margin:20px 0 0;color:#0E1512;"><strong>If this was not you, reset your password now.</strong> Whoever made this change can sign in until you do.</p>`,
+      { label: 'Reset your password', url: resetUrl },
+    ),
+    text: `Hi ${firstName}, the password on your Tradewave account has just been changed. ${devices}\n\nIf this was not you, reset your password now — whoever made this change can sign in until you do.\n\n${resetUrl}`,
+  };
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,

@@ -21,6 +21,7 @@ import {
   type SetWithdrawalWindowInput,
 } from '../wallet/schemas';
 import * as window from '../wallet/withdrawal-window.service';
+import * as maturity from '../investment/maturity.service';
 import {
   createPropertySchema,
   propertyStatusSchema,
@@ -138,6 +139,34 @@ adminRouter.post(
     });
   },
 );
+
+// ── Maturities ──────────────────────────────────────────────────────────────
+
+/**
+ * What is coming due, and anything overdue.
+ *
+ * Settlement runs off page loads rather than a cron, so this screen is what
+ * makes a quiet week visible: without it, "nobody has logged in for four days"
+ * and "settlement is broken" look identical from the outside.
+ */
+adminRouter.get('/maturities', async (_req: Request, res: Response) => {
+  await maturity.settleMaturedInvestments();
+  res.json({ maturities: await maturity.listUpcomingMaturities() });
+});
+
+/** Forces one, for when something is overdue and nobody wants to wait. */
+adminRouter.post('/maturities/:id/settle', async (req: Request, res: Response) => {
+  const settled = await maturity.settleInvestment(id(req));
+  if (!settled) throw badRequest('That investment is not due, or has already been settled.');
+  res.json({
+    settled: {
+      investmentId: settled.investmentId,
+      principalCents: settled.principalCents.toString(),
+      returnCents: settled.returnCents.toString(),
+      totalCents: settled.totalCents.toString(),
+    },
+  });
+});
 
 // ── Investors ────────────────────────────────────────────────────────────────
 

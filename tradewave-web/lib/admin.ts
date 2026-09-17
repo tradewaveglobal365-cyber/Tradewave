@@ -267,3 +267,22 @@ export async function getWithdrawalWindow(): Promise<{
     '/admin/withdrawal-window',
   );
 }
+
+// ── Maturities ───────────────────────────────────────────────────────────────
+
+export interface AdminMaturity {
+  investmentId: string;
+  maturesAt: string;
+  /** Negative once overdue — the case staff actually need to see. */
+  daysUntil: number;
+  principalCents: string;
+  payoutCents: string;
+  status: string;
+  propertyTitle: string;
+  user: { id: string; email: string; firstName: string; lastName: string };
+}
+
+export async function getAdminMaturities(): Promise<AdminMaturity[]> {
+  const body = await authedGet<{ maturities: AdminMaturity[] }>('/admin/maturities');
+  return body?.maturities ?? [];
+}

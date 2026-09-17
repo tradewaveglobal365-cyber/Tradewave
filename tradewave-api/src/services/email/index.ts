@@ -12,6 +12,8 @@ import type {
   WithdrawalRequestedEmail,
   WithdrawalSettledEmail,
   ReferralBonusEmail,
+  InvestmentMaturedEmail,
+  PasswordChangedEmail,
   VerificationEmail,
 } from './types';
 import {
@@ -24,6 +26,8 @@ import {
   withdrawalRequestedTemplate,
   withdrawalSettledTemplate,
   referralBonusTemplate,
+  investmentMaturedTemplate,
+  passwordChangedTemplate,
   verificationTemplate,
 } from './templates';
 
@@ -88,6 +92,14 @@ class ConsoleEmailService implements EmailService {
 
   async sendReferralBonus({ to, amount }: ReferralBonusEmail): Promise<void> {
     logger.info({ to, amount }, '[email:referral-bonus]');
+  }
+
+  async sendInvestmentMatured({ to, total }: InvestmentMaturedEmail): Promise<void> {
+    logger.info({ to, total }, '[email:investment-matured]');
+  }
+
+  async sendPasswordChanged({ to, otherSessionsEnded }: PasswordChangedEmail): Promise<void> {
+    logger.info({ to, otherSessionsEnded }, '[email:password-changed]');
   }
 }
 
@@ -237,6 +249,29 @@ class ResendEmailService implements EmailService {
     url,
   }: ReferralBonusEmail): Promise<void> {
     const t = referralBonusTemplate(firstName, inviteeName, amount, rate, url);
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendInvestmentMatured({
+    to,
+    firstName,
+    propertyTitle,
+    principal,
+    earned,
+    total,
+    url,
+  }: InvestmentMaturedEmail): Promise<void> {
+    const t = investmentMaturedTemplate(firstName, propertyTitle, principal, earned, total, url);
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendPasswordChanged({
+    to,
+    firstName,
+    otherSessionsEnded,
+    resetUrl,
+  }: PasswordChangedEmail): Promise<void> {
+    const t = passwordChangedTemplate(firstName, otherSessionsEnded, resetUrl);
     await this.send(to, t.subject, t.html, t.text);
   }
 }

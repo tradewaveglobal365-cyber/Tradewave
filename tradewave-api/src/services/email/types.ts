@@ -126,6 +126,33 @@ export interface ReferralBonusEmail {
   url: string;
 }
 
+/** A term ended and the money is spendable again. */
+export interface InvestmentMaturedEmail {
+  to: string;
+  firstName: string;
+  propertyTitle: string;
+  principal: string;
+  earned: string;
+  total: string;
+  url: string;
+}
+
+/**
+ * The account password changed.
+ *
+ * A security notice rather than a receipt: it goes to the account address
+ * whether or not the change was legitimate, because the whole point is to reach
+ * the real owner when it was not them. It carries a reset link so somebody who
+ * did not do this has an immediate way to take the account back.
+ */
+export interface PasswordChangedEmail {
+  to: string;
+  firstName: string;
+  /** How many other devices were signed out, for the copy. */
+  otherSessionsEnded: number;
+  resetUrl: string;
+}
+
 export interface EmailService {
   sendVerification(input: VerificationEmail): Promise<void>;
   sendPasswordReset(input: PasswordResetEmail): Promise<void>;
@@ -137,4 +164,6 @@ export interface EmailService {
   sendWithdrawalRequested(input: WithdrawalRequestedEmail): Promise<void>;
   sendWithdrawalSettled(input: WithdrawalSettledEmail): Promise<void>;
   sendReferralBonus(input: ReferralBonusEmail): Promise<void>;
+  sendInvestmentMatured(input: InvestmentMaturedEmail): Promise<void>;
+  sendPasswordChanged(input: PasswordChangedEmail): Promise<void>;
 }

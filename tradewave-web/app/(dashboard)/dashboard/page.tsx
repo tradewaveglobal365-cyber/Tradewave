@@ -10,7 +10,7 @@ import { formatAed } from '@/lib/money';
 import { PageHeader, EmptyState } from '@/components/dashboard/page-header';
 import { SetupChecklist } from '@/components/dashboard/setup-checklist';
 import { GrowthCurve } from '@/components/dashboard/growth-curve';
-import { HoldingCard } from '@/components/dashboard/holding-card';
+import { LiveHoldingCard } from '@/components/dashboard/live-holding-card';
 
 export const metadata: Metadata = { title: 'Overview · Tradewave' };
 
@@ -76,7 +76,7 @@ export default async function DashboardPage() {
             </div>
             <div className="space-y-3">
               {portfolio.holdings.slice(0, 3).map((h) => (
-                <HoldingCard key={h.id} holding={h} />
+                <LiveHoldingCard key={h.id} holding={h} serverTime={portfolio.serverTime ?? null} />
               ))}
             </div>
           </section>
