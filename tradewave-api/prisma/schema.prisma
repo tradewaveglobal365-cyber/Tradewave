@@ -12,6 +12,15 @@ datasource db {
 enum UserStatus {
   PENDING_VERIFICATION
   ACTIVE
+  /// Can sign in and read everything, but cannot move money — no deposit, no
+  /// investment, no withdrawal, no payout-account change, no identity check.
+  ///
+  /// Deliberately NOT the same as SUSPENDED. Locking somebody out of an
+  /// investment account while you look into something is indistinguishable,
+  /// from where they sit, from being robbed. Letting them see their money is
+  /// still there turns an investigation into a support conversation.
+  RESTRICTED
+  /// Cannot sign in at all. login() refuses before the password is checked.
   SUSPENDED
 }
 
@@ -113,6 +122,19 @@ model User {
   kycStatus       KycStatus  @default(NOT_STARTED)
   kycVerifiedAt   DateTime?
 
+  /// When an admin last sent this user back through identity verification.
+  ///
+  /// The attempt caps in kyc.service count submissions since this moment, so a
+  /// decision WE made does not spend an allowance the investor never used.
+  kycResetAt DateTime?
+
+  /// Set while withdrawals are blocked for this investor specifically.
+  ///
+  /// Narrower than RESTRICTED on purpose: stopping somebody taking money out
+  /// while a payment is disputed should not also stop them investing or seeing
+  /// their account.
+  withdrawalsBlockedAt DateTime?
+
   // Referral — written in the same transaction as user creation, never updated after.
   referralCode String    @unique
   referredById String?   @db.Uuid
@@ -125,15 +147,18 @@ model User {
   lockedUntil      DateTime?
   lastLoginAt      DateTime?
 
-  sessions         Session[]
-  tokens           VerificationToken[]
-  wallet           Wallet?
-  investments      Investment[]
-  deposits         Deposit[]
-  depositAccount   DepositAccount?
-  payoutAccount    PayoutAccount?
-  withdrawals      Withdrawal[]
-  kycVerifications KycVerification[]
+  sessions       Session[]
+  tokens         VerificationToken[]
+  wallet         Wallet?
+  investments    Investment[]
+  deposits       Deposit[]
+  depositAccount DepositAccount?
+  payoutAccount  PayoutAccount?
+  withdrawals    Withdrawal[]
+
+  adminActionsPerformed AdminAction[]     @relation("AdminActionsPerformed")
+  adminActionsReceived  AdminAction[]     @relation("AdminActionsReceived")
+  kycVerifications      KycVerification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -441,8 +466,65 @@ model WithdrawalWindow {
    */
   timezone String @default("Africa/Lagos")
 
+  /// Stops ALL withdrawals, for everybody, regardless of the schedule above.
+  ///
+  /// Separate from `enabled`, which only turns the day-and-time restriction off
+  /// — the two mean opposite things and collapsing them would make "no
+  /// schedule" and "nothing may leave" the same switch.
+  paused       Boolean @default(false)
+  /// Shown to investors. A pause with no explanation is the shape of a scam.
+  pausedReason String?
+
   updatedAt       DateTime @updatedAt
   updatedByUserId String?  @db.Uuid
+}
+
+/// What staff did to whom, and why.
+///
+/// Append-only. Nothing updates or deletes a row — the same shape FxRate uses,
+/// for the same reason its comment gives: a bad edit has to stay recoverable.
+///
+/// Three actor columns already existed before this (Withdrawal.decidedByUserId,
+/// WithdrawalWindow.updatedByUserId, FxRate.setByUserId) and each keeps only the
+/// LAST actor for one row. None of them can answer "who froze this person, and
+/// why" — which is a question that eventually gets asked by somebody who is
+/// angry, and sometimes by a regulator.
+model AdminAction {
+  id   String          @id @default(uuid()) @db.Uuid
+  type AdminActionType
+
+  actorId String @db.Uuid
+  actor   User   @relation("AdminActionsPerformed", fields: [actorId], references: [id])
+
+  /// Null for platform-wide actions, which have no single subject.
+  subjectId String? @db.Uuid
+  subject   User?   @relation("AdminActionsReceived", fields: [subjectId], references: [id])
+
+  /// Mandatory. The investor is told this for anything that affects them, so it
+  /// is written to be read by them rather than as an internal note.
+  reason String
+
+  /// Whatever else the action needs recorded, e.g. {"amountCents":"-5000"}.
+  detail Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([subjectId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+enum AdminActionType {
+  SUSPEND
+  REINSTATE
+  RESTRICT
+  UNRESTRICT
+  BLOCK_WITHDRAWALS
+  UNBLOCK_WITHDRAWALS
+  FORCE_KYC_REVERIFICATION
+  ADJUST_BALANCE
+  VERIFY_EMAIL
+  PAUSE_WITHDRAWALS
+  RESUME_WITHDRAWALS
 }
 
 model Withdrawal {

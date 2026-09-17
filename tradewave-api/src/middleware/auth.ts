@@ -3,12 +3,14 @@ import type { Role, UserStatus } from '@prisma/client';
 import { ACCESS_COOKIE } from '../lib/cookies';
 import { verifyAccessToken } from '../services/token.service';
 import {
+  accountRestricted,
   accountSuspended,
   emailNotVerified,
   forbidden,
   kycPending,
   kycRequired,
   unauthorized,
+  withdrawalsBlocked,
 } from '../lib/errors';
 import { prisma } from '../lib/prisma';
 
@@ -48,29 +50,80 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
 }
 
 /**
- * Requires a fully active account.
+ * Requires an account allowed to MOVE MONEY.
  *
  * Account gating reads UserStatus in exactly one place rather than scattering
  * status checks across routes.
+ *
+ * ── Reads the database, not the token ─────────────────────────────────────
+ * This used to read req.auth.status, i.e. the JWT. That made every freeze up to
+ * fifteen minutes late (ACCESS_TOKEN_TTL_SECONDS), and worse: the web proxy
+ * silently calls /auth/refresh whenever a token is within 60s of expiring, so a
+ * suspended session renewed itself indefinitely and the freeze never landed at
+ * all. requireRole's comment below already made this argument for privilege;
+ * it applies at least as strongly to somebody's money.
+ *
+ * ── What it does NOT guard ────────────────────────────────────────────────
+ * Reading. A RESTRICTED investor can still see their balance, their holdings,
+ * their ledger and their documents — that is the entire difference between
+ * RESTRICTED and SUSPENDED, and it is why this is not on GET /portfolio.
  *
  * Identity verification is NOT folded in here — see requireKyc below. UserStatus
  * holds one value, and verifyEmail/resetPassword both write status: 'ACTIVE' as a
  * side effect, so encoding KYC in it would let a password reset silently change
  * someone's identity state.
  */
-export function requireActive(req: Request, _res: Response, next: NextFunction): void {
+export async function requireActive(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
   if (!req.auth) return next(unauthorized());
 
-  switch (req.auth.status) {
+  const user = await prisma.user.findUnique({
+    where: { id: req.auth.userId },
+    select: { status: true },
+  });
+  if (!user) return next(unauthorized());
+
+  switch (user.status) {
     case 'ACTIVE':
       return next();
     case 'PENDING_VERIFICATION':
       return next(emailNotVerified());
+    case 'RESTRICTED':
+      return next(accountRestricted());
     case 'SUSPENDED':
       return next(accountSuspended());
     default:
       return next(forbidden());
   }
+}
+
+/**
+ * Requires that withdrawals are open for this investor.
+ *
+ * Separate from requireActive because it is narrower: blocking somebody from
+ * taking money out while a payment is disputed should not also stop them
+ * investing or reading their account. Mounted only on the withdrawal request
+ * route; the admin approve path checks the same thing server-side, because a
+ * withdrawal requested before the block still must not be paid after it.
+ */
+export async function requireWithdrawalsAllowed(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+): Promise<void> {
+  if (!req.auth) return next(unauthorized());
+
+  const user = await prisma.user.findUnique({
+    where: { id: req.auth.userId },
+    select: { withdrawalsBlockedAt: true },
+  });
+  if (!user) return next(unauthorized());
+  if (user.withdrawalsBlockedAt) return next(withdrawalsBlocked());
+
+  next();
 }
 
 /**
@@ -127,6 +180,11 @@ export async function requireKyc(
  *
  * This guards low-traffic admin routes, so the extra indexed SELECT is free next
  * to being correct.
+ *
+ * It also reads STATUS, not just role. A staff account frozen for cause used to
+ * keep the entire admin console — including the ability to move money — because
+ * this selected the role column and nothing else. Suspending somebody has to
+ * mean they cannot act, and staff are the accounts where that matters most.
  */
 export function requireRole(...roles: Role[]) {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
@@ -134,9 +192,11 @@ export function requireRole(...roles: Role[]) {
 
     const user = await prisma.user.findUnique({
       where: { id: req.auth.userId },
-      select: { role: true },
+      select: { role: true, status: true },
     });
     if (!user) return next(unauthorized());
+    if (user.status === 'SUSPENDED') return next(accountSuspended());
+    if (user.status === 'RESTRICTED') return next(accountRestricted());
     if (!roles.includes(user.role)) return next(forbidden());
 
     next();

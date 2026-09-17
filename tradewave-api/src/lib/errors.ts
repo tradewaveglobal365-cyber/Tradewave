@@ -46,6 +46,34 @@ export const accountLocked = (until: Date) =>
 export const emailNotVerified = () =>
   new AppError(403, 'EMAIL_NOT_VERIFIED', 'Verify your email address to continue.');
 
+/**
+ * The account may sign in and read, but not move money.
+ *
+ * Its own code, distinct from ACCOUNT_SUSPENDED, because the two say opposite
+ * things to the person reading them: one means "you are locked out", the other
+ * means "your money is where you left it and you cannot move it right now".
+ * A client that showed the wrong one would be telling somebody their funds were
+ * gone.
+ */
+export const accountRestricted = (
+  message = 'Your account is temporarily restricted, so money cannot move in or out. Your balance and holdings are unaffected — contact support.',
+) => new AppError(403, 'ACCOUNT_RESTRICTED', message);
+
+/** Withdrawals are blocked for this investor specifically. */
+export const withdrawalsBlocked = (
+  message = 'Withdrawals are on hold for your account. Contact support and we will explain why.',
+) => new AppError(403, 'WITHDRAWALS_BLOCKED', message);
+
+/** Withdrawals are paused for everybody. The reason is shown to the investor. */
+export const withdrawalsPaused = (reason: string | null) =>
+  new AppError(
+    403,
+    'WITHDRAWALS_PAUSED',
+    reason
+      ? `Withdrawals are paused right now: ${reason}`
+      : 'Withdrawals are paused right now. They will reopen shortly.',
+  );
+
 export const accountSuspended = () =>
   new AppError(403, 'ACCOUNT_SUSPENDED', 'This account has been suspended. Contact support.');
 

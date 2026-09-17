@@ -17,12 +17,16 @@ export const investmentRouter = Router();
  * renders. It is throttled internally and swallows its own failures, so a
  * settlement problem cannot stop a portfolio loading.
  *
+ * requireActive is deliberately NOT here. Seeing your own holdings is exactly
+ * what a RESTRICTED investor must still be able to do — the freeze is on money
+ * moving, not on knowing where it is.
+ *
  * Also returns the server's clock. The portfolio ticks the accrued figure up
  * live in the browser, computed from the same four inputs this uses — so the
  * client needs our time rather than the device's, or a phone with a wrong clock
  * shows a number we would not pay.
  */
-investmentRouter.get('/', requireAuth, requireActive, async (req: Request, res: Response) => {
+investmentRouter.get('/', requireAuth, async (req: Request, res: Response) => {
   if (!req.auth) throw unauthorized();
   await settleMaturedInvestments();
   res.json({ ...(await getPortfolio(req.auth.userId)), serverTime: new Date().toISOString() });

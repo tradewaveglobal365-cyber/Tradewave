@@ -48,6 +48,14 @@ export interface AdminWithdrawalView {
    * thing on this screen that cannot be checked automatically.
    */
   destinationChangedRecently: boolean;
+  /**
+   * The investor's account is frozen, or their withdrawals are blocked.
+   *
+   * Approving is refused server-side either way; this is what stops the row
+   * looking ordinary in a queue somebody is working through quickly.
+   */
+  investorFrozen: boolean;
+  investorStatus: string;
   /** Whether the bank ever confirmed the name, or the user merely asserted it. */
   nameResolved: boolean;
   user: { id: string; email: string; firstName: string; lastName: string };
@@ -64,6 +72,8 @@ export async function listWithdrawals(): Promise<AdminWithdrawalView[]> {
           email: true,
           firstName: true,
           lastName: true,
+          status: true,
+          withdrawalsBlockedAt: true,
           payoutAccount: { select: { destinationChangedAt: true, nameResolved: true } },
         },
       },
@@ -98,6 +108,11 @@ export async function listWithdrawals(): Promise<AdminWithdrawalView[]> {
         ? now - account.destinationChangedAt.getTime() < RECENT_CHANGE_MS
         : false,
       nameResolved: account?.nameResolved ?? false,
+      investorFrozen:
+        w.user.status === 'SUSPENDED' ||
+        w.user.status === 'RESTRICTED' ||
+        w.user.withdrawalsBlockedAt !== null,
+      investorStatus: w.user.status,
       user: {
         id: w.user.id,
         email: w.user.email,

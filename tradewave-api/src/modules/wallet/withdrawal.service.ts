@@ -21,7 +21,9 @@ import {
   notFound,
   payoutAccountTooNew,
   withdrawalPending,
+  withdrawalsBlocked,
   withdrawalsClosed,
+  withdrawalsPaused,
   withdrawalsUnavailable,
 } from '../../lib/errors';
 
@@ -209,6 +211,8 @@ export async function requestWithdrawal(
   // for why: a balance that drops on Tuesday for money that arrives on Friday
   // is indistinguishable, from the investor's side, from not being paid at all.
   const window = await getWindow();
+  if (window.paused) throw withdrawalsPaused(window.pausedReason);
+
   const state = evaluateWindow(window);
   if (!state.open) throw withdrawalsClosed(state.opensAt, describeWindow(window));
 
@@ -409,6 +413,20 @@ export async function approveWithdrawal(
   if (row.status !== 'REQUESTED') {
     throw badRequest(`This withdrawal is ${row.status.toLowerCase()} and cannot be approved.`);
   }
+
+  // Checked HERE and not only at request time. A withdrawal asked for before a
+  // freeze must not be paid after it — that is the single payment a freeze
+  // exists to stop, and the queue would otherwise show it as ordinary.
+  const investor = await prisma.user.findUniqueOrThrow({
+    where: { id: row.userId },
+    select: { status: true, withdrawalsBlockedAt: true },
+  });
+  if (investor.status === 'SUSPENDED' || investor.status === 'RESTRICTED') {
+    throw badRequest(
+      `That investor's account is ${investor.status.toLowerCase()}. Reinstate it before releasing money, or reject this withdrawal.`,
+    );
+  }
+  if (investor.withdrawalsBlockedAt) throw withdrawalsBlocked();
 
   const rate = await getCurrentRate();
   if (!rate) {

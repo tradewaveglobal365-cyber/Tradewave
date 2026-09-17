@@ -42,7 +42,7 @@ export interface ReferralSummary {
 export interface ReferralListItem {
   displayName: string;
   maskedEmail: string;
-  status: 'PENDING_VERIFICATION' | 'ACTIVE' | 'SUSPENDED';
+  status: 'PENDING_VERIFICATION' | 'ACTIVE' | 'RESTRICTED' | 'SUSPENDED';
   joinedAt: Date;
 }
 

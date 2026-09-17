@@ -1,5 +1,10 @@
 import { Router, type Request, type Response } from 'express';
-import { requireAuth, requireKyc } from '../../middleware/auth';
+import {
+  requireActive,
+  requireAuth,
+  requireKyc,
+  requireWithdrawalsAllowed,
+} from '../../middleware/auth';
 import { logger } from '../../lib/logger';
 import { validateBody } from '../../middleware/validate';
 import {
@@ -52,6 +57,7 @@ walletRouter.get('/', requireAuth, async (req: Request, res: Response) => {
 walletRouter.get(
   '/deposit-account',
   requireAuth,
+  requireActive,
   requireKyc,
   depositAccountLimiter,
   async (req: Request, res: Response) => {
@@ -134,6 +140,7 @@ walletRouter.get('/payout-account', requireAuth, async (req: Request, res: Respo
 walletRouter.put(
   '/payout-account',
   requireAuth,
+  requireActive,
   requireKyc,
   validateBody(setPayoutAccountSchema),
   async (req: Request, res: Response) => {
@@ -169,6 +176,8 @@ walletRouter.get('/withdrawals', requireAuth, async (req: Request, res: Response
 walletRouter.post(
   '/withdrawals',
   requireAuth,
+  requireActive,
+  requireWithdrawalsAllowed,
   requireKyc,
   withdrawalLimiter,
   validateBody(requestWithdrawalSchema),

@@ -35,6 +35,9 @@ export const DAY_NAMES = [
 const MINUTES_PER_DAY = 24 * 60;
 
 export interface WithdrawalWindowView {
+  /** Stops every withdrawal for everybody, whatever the schedule says. */
+  paused: boolean;
+  pausedReason: string | null;
   enabled: boolean;
   daysOfWeek: number[];
   opensAtMinute: number;
@@ -57,6 +60,8 @@ export async function getWindow(): Promise<WithdrawalWindowView> {
     create: { id: SINGLETON_ID },
   });
   return {
+    paused: row.paused,
+    pausedReason: row.pausedReason,
     enabled: row.enabled,
     daysOfWeek: [...row.daysOfWeek].sort((a, b) => a - b),
     opensAtMinute: row.opensAtMinute,
@@ -78,6 +83,10 @@ export function evaluateWindow(
   window: WithdrawalWindowView,
   now = new Date(),
 ): WindowState {
+  // A pause beats the schedule in both directions: paused is shut even on a
+  // payout day, and it is shut even when there is no schedule at all.
+  if (window.paused) return { open: false, opensAt: null, closesAt: null };
+
   if (!window.enabled || window.daysOfWeek.length === 0) {
     return { open: true, opensAt: null, closesAt: null };
   }
@@ -216,6 +225,8 @@ function offsetMs(date: Date, timeZone: string): number {
 // ── Editing ──────────────────────────────────────────────────────────────────
 
 export interface SetWindowInput {
+  paused: boolean;
+  pausedReason?: string | null | undefined;
   enabled: boolean;
   daysOfWeek: number[];
   opensAtMinute: number;
@@ -245,16 +256,30 @@ export async function setWindow(
   if (input.opensAtMinute < 0 || input.closesAtMinute > MINUTES_PER_DAY) {
     throw badRequest('Times must fall inside a single day.');
   }
+  if (input.paused && !(input.pausedReason ?? '').trim()) {
+    // A pause with no explanation is the shape of a scam. Investors are shown
+    // this sentence when their withdrawal is refused.
+    throw badRequest('Say why withdrawals are paused — investors are shown it.', {
+      pausedReason: 'Give a reason',
+    });
+  }
   if (!isValidTimezone(input.timezone)) {
     throw badRequest(`"${input.timezone}" is not a timezone this server recognises.`, {
       timezone: 'Not a recognised timezone',
     });
   }
 
+  const data = {
+    ...input,
+    daysOfWeek: days,
+    pausedReason: input.paused ? (input.pausedReason ?? '').trim() : null,
+    updatedByUserId: adminUserId,
+  };
+
   const row = await prisma.withdrawalWindow.upsert({
     where: { id: SINGLETON_ID },
-    update: { ...input, daysOfWeek: days, updatedByUserId: adminUserId },
-    create: { id: SINGLETON_ID, ...input, daysOfWeek: days, updatedByUserId: adminUserId },
+    update: data,
+    create: { id: SINGLETON_ID, ...data },
   });
 
   logger.info(
@@ -263,6 +288,8 @@ export async function setWindow(
   );
 
   return {
+    paused: row.paused,
+    pausedReason: row.pausedReason,
     enabled: row.enabled,
     daysOfWeek: [...row.daysOfWeek].sort((a, b) => a - b),
     opensAtMinute: row.opensAtMinute,
@@ -283,6 +310,7 @@ function isValidTimezone(value: string): boolean {
 
 /** "Friday, 09:00 to 17:00" — one sentence the UI and the emails can share. */
 export function describeWindow(window: WithdrawalWindowView): string {
+  if (window.paused) return 'paused';
   if (!window.enabled || window.daysOfWeek.length === 0) return 'any time';
   const days = window.daysOfWeek.map((d) => DAY_NAMES[d]).join(', ');
   return `${days}, ${formatMinute(window.opensAtMinute)} to ${formatMinute(window.closesAtMinute)}`;

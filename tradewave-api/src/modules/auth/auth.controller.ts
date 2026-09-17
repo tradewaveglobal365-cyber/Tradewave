@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { REFRESH_COOKIE, clearAuthCookies, setAuthCookies } from '../../lib/cookies';
-import { unauthorized } from '../../lib/errors';
+import { accountSuspended, unauthorized } from '../../lib/errors';
 import {
   revokeAllSessions,
   revokeSession,
@@ -58,6 +58,19 @@ export async function refresh(req: Request, res: Response): Promise<void> {
   if (typeof raw !== 'string' || !raw) throw unauthorized('No active session.');
 
   const { session, rawRefreshToken, user } = await rotateRefreshToken(raw, sessionContext(req));
+
+  // A suspended account must not be able to renew its own session. The web
+  // proxy calls this automatically whenever an access token is within 60s of
+  // expiring, so without this check a suspended session quietly renewed itself
+  // forever and the suspension never took effect at all.
+  //
+  // RESTRICTED deliberately passes: that state is allowed to stay signed in and
+  // read. It is requireActive that stops it moving money.
+  if (user.status === 'SUSPENDED') {
+    clearAuthCookies(res);
+    throw accountSuspended();
+  }
+
   const accessToken = signAccessToken({
     sub: user.id,
     role: user.role,

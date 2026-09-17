@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { requireAuth } from '../../middleware/auth';
+import { requireActive, requireAuth } from '../../middleware/auth';
 import { validateBody } from '../../middleware/validate';
 import { kycSubmitLimiter, kycWebhookLimiter } from '../../middleware/rate-limit';
 import { unauthorized } from '../../lib/errors';
@@ -25,6 +25,8 @@ kycRouter.get('/me', requireAuth, async (req: Request, res: Response) => {
 kycRouter.post(
   '/submit',
   requireAuth,
+  // Every check costs real money. A frozen account should not spend it.
+  requireActive,
   kycSubmitLimiter,
   validateBody(submitKycSchema),
   async (req: Request, res: Response) => {

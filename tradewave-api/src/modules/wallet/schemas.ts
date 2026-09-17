@@ -58,6 +58,9 @@ export const markPaidSchema = z.object({
  * a silent off-by-an-hour. The form renders the picker.
  */
 export const setWithdrawalWindowSchema = z.object({
+  /** Stops every withdrawal for everybody, whatever the schedule says. */
+  paused: z.boolean().default(false),
+  pausedReason: z.string().trim().max(300, 'That is too long').optional(),
   enabled: z.boolean(),
   daysOfWeek: z
     .array(z.number().int().min(0, 'Invalid day').max(6, 'Invalid day'))
