@@ -313,6 +313,93 @@ export async function forgotPassword(email: string): Promise<void> {
   });
 }
 
+/**
+ * Changes the password of somebody who is already signed in.
+ *
+ * ── Why the current password is required ──────────────────────────────────
+ * A session cookie proves the browser was signed in at some point. It does not
+ * prove the person at the keyboard is the account owner — an unattended laptop
+ * and a stolen session both look identical to it. Asking for the old password
+ * is what turns "has a session" into "knows the secret", and it is the only
+ * thing standing between a borrowed session and a permanently stolen account.
+ *
+ * ── Why the CURRENT session survives ──────────────────────────────────────
+ * Every OTHER session is revoked, which is what evicts an attacker. This one is
+ * kept. Signing somebody out of the session they just used to prove who they
+ * are teaches them that securing their account costs them something, and the
+ * eviction is already complete without it.
+ *
+ * Returns how many other sessions were ended, so the UI can say so rather than
+ * leaving the user to wonder whether it worked everywhere.
+ */
+export async function changePassword(params: {
+  userId: string;
+  /** Kept alive. Every other session for this user is revoked. */
+  sessionId: string;
+  currentPassword: string;
+  newPassword: string;
+}): Promise<{ otherSessionsEnded: number }> {
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: params.userId },
+    select: { id: true, email: true, firstName: true, passwordHash: true },
+  });
+
+  const correct = await verifyPassword(user.passwordHash, params.currentPassword);
+  if (!correct) {
+    logger.warn({ userId: user.id }, 'Password change refused: current password wrong');
+    // A field error rather than a 401: the session is perfectly valid, it is
+    // the typed password that is wrong. A 401 here would make the client think
+    // it had been signed out and bounce the user to the login screen.
+    throw validationFailed({ currentPassword: 'That is not your current password' });
+  }
+
+  const passwordHash = await hashPassword(params.newPassword);
+  const now = new Date();
+
+  const [, revoked] = await prisma.$transaction([
+    prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        // Someone who has just proved they know the password should not still
+        // be locked out by earlier failed attempts.
+        failedLoginCount: 0,
+        lockedUntil: null,
+      },
+    }),
+    prisma.session.updateMany({
+      where: { userId: user.id, revokedAt: null, id: { not: params.sessionId } },
+      data: { revokedAt: now },
+    }),
+    // Any outstanding reset link is now a way back in for whoever requested it.
+    prisma.verificationToken.updateMany({
+      where: { userId: user.id, type: 'PASSWORD_RESET', consumedAt: null },
+      data: { consumedAt: now },
+    }),
+  ]);
+
+  logger.info(
+    { userId: user.id, otherSessionsEnded: revoked.count },
+    'Password changed',
+  );
+
+  // A security notice, not a receipt — the point is to reach the real owner
+  // when it was not them. After the commit, and it can never throw: a mail
+  // failure must not make a completed password change look like it failed.
+  try {
+    await emailService.sendPasswordChanged({
+      to: user.email,
+      firstName: user.firstName,
+      otherSessionsEnded: revoked.count,
+      resetUrl: `${env.WEB_ORIGIN}/forgot-password`,
+    });
+  } catch (err) {
+    logger.error({ err, userId: user.id }, 'Could not send the password change email');
+  }
+
+  return { otherSessionsEnded: revoked.count };
+}
+
 export async function resetPassword(rawToken: string, newPassword: string): Promise<void> {
   const record = await prisma.verificationToken.findUnique({
     where: { tokenHash: hashToken(rawToken) },

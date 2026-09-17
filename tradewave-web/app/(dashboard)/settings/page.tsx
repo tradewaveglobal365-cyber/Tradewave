@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
-import { BadgeCheck, Banknote, ChevronRight, Landmark, ShieldCheck } from 'lucide-react';
+import { BadgeCheck, Banknote, ChevronRight, KeyRound, Landmark, ShieldCheck } from 'lucide-react';
 import { getCurrentUser } from '@/lib/session';
 import { PageHeader } from '@/components/dashboard/page-header';
 import { SignOutAllButton } from '@/components/dashboard/sign-out-all-button';
 import { ProfileForm } from '@/components/settings/profile-form';
+import { PasswordForm } from '@/components/settings/password-form';
 import { getPayoutAccount } from '@/lib/wallet';
 
 export const metadata: Metadata = { title: 'Settings · Tradewave' };
@@ -29,6 +30,14 @@ export default async function SettingsPage() {
           description="Your name must match the document you verify with."
         >
           <ProfileForm user={user} />
+        </Card>
+
+        <Card
+          title="Password"
+          icon={<KeyRound className="size-4" />}
+          description="Changing it signs out every other device."
+        >
+          <PasswordForm />
         </Card>
 
         <Card

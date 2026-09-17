@@ -103,3 +103,17 @@ export const withdrawalLimiter = limiter({
   limit: 10,
   keyGenerator: (req) => req.auth?.userId ?? req.ip ?? 'unknown',
 });
+
+/**
+ * Changing a password while signed in.
+ *
+ * Keyed on the user, so it MUST be mounted after requireAuth. The limit is
+ * about the CURRENT password field rather than the new one: without it, someone
+ * with a stolen session could guess their way to the account owner's password
+ * at their leisure, and the login limiter would never see the attempts.
+ */
+export const changePasswordLimiter = limiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  keyGenerator: (req) => req.auth?.userId ?? req.ip ?? 'unknown',
+});

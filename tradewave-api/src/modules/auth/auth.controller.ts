@@ -17,6 +17,7 @@ import type {
   ResendVerificationInput,
   ResetPasswordInput,
   UpdateProfileInput,
+  ChangePasswordInput,
 } from './schemas';
 
 function sessionContext(req: Request) {
@@ -81,6 +82,24 @@ export async function logoutAll(req: Request, res: Response): Promise<void> {
   const count = await revokeAllSessions(req.auth.userId);
   clearAuthCookies(res);
   res.json({ message: `Signed out of ${count} session${count === 1 ? '' : 's'}.` });
+}
+
+export async function changePassword(req: Request, res: Response): Promise<void> {
+  if (!req.auth) throw unauthorized();
+  const { currentPassword, password } = req.body as ChangePasswordInput;
+
+  const { otherSessionsEnded } = await authService.changePassword({
+    userId: req.auth.userId,
+    // This session is deliberately kept — see auth.service.changePassword.
+    sessionId: req.auth.sessionId,
+    currentPassword,
+    newPassword: password,
+  });
+
+  res.json({
+    message: 'Your password has been changed.',
+    otherSessionsEnded,
+  });
 }
 
 export async function forgotPassword(req: Request, res: Response): Promise<void> {

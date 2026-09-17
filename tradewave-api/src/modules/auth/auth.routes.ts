@@ -6,6 +6,7 @@ import {
   loginLimiter,
   registerLimiter,
   resendVerificationLimiter,
+  changePasswordLimiter,
 } from '../../middleware/rate-limit';
 import * as controller from './auth.controller';
 import {
@@ -16,6 +17,7 @@ import {
   resetPasswordSchema,
   updateProfileSchema,
   verifyEmailQuerySchema,
+  changePasswordSchema,
 } from './schemas';
 
 export const authRouter = Router();
@@ -58,6 +60,26 @@ authRouter.post(
   '/reset-password',
   validateBody(resetPasswordSchema),
   controller.resetPassword,
+);
+
+/**
+ * Change the password while signed in.
+ *
+ * requireAuth only, not requireActive: somebody who has not confirmed their
+ * email yet may still need to change a password they think is compromised, and
+ * that is not a moment to make them jump through a hoop first.
+ *
+ * The limiter is keyed on the user and mounted after requireAuth, because what
+ * it is really protecting is the CURRENT password field — otherwise a stolen
+ * session could be used to guess the owner's password at leisure, and the login
+ * limiter would never see a single attempt.
+ */
+authRouter.post(
+  '/change-password',
+  requireAuth,
+  changePasswordLimiter,
+  validateBody(changePasswordSchema),
+  controller.changePassword,
 );
 
 authRouter.get('/me', requireAuth, controller.me);

@@ -389,3 +389,164 @@ describe('CSRF origin check', () => {
     expect(res.status).toBe(200);
   });
 });
+
+// ── Changing a password while signed in ──────────────────────────────────────
+
+/**
+ * The assertions that matter are the session ones. Changing a password has to
+ * evict anybody else holding a session, and must NOT evict the person doing it
+ * — being signed out of the session you just used to prove who you are teaches
+ * people that securing their account costs them something.
+ */
+describe('changing the password while signed in', () => {
+  const NEW_PASSWORD = 'a much better passphrase here';
+
+  async function signedIn(email: string) {
+    await request(app)
+      .post('/api/v1/auth/register')
+      .set('Origin', ORIGIN)
+      .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD });
+    const token = new URL(sent.verify.at(-1)!).searchParams.get('token')!;
+    const agent = request.agent(app);
+    const res = await agent
+      .post('/api/v1/auth/verify-email')
+      .set('Origin', ORIGIN)
+      .send({ token });
+    return { agent, userId: res.body.user.id as string };
+  }
+
+  /** A second signed-in device for the same account. */
+  async function secondDevice(email: string) {
+    const agent = request.agent(app);
+    await agent
+      .post('/api/v1/auth/login')
+      .set('Origin', ORIGIN)
+      .send({ email, password: PASSWORD })
+      .expect(200);
+    return agent;
+  }
+
+  const change = (
+    agent: ReturnType<typeof request.agent>,
+    currentPassword: string,
+    password: string,
+  ) =>
+    agent
+      .post('/api/v1/auth/change-password')
+      .set('Origin', ORIGIN)
+      .send({ currentPassword, password });
+
+  it('changes the password and lets the new one sign in', async () => {
+    const { agent } = await signedIn('change@example.com');
+    await change(agent, PASSWORD, NEW_PASSWORD).expect(200);
+
+    const fresh = request.agent(app);
+    await fresh
+      .post('/api/v1/auth/login')
+      .set('Origin', ORIGIN)
+      .send({ email: 'change@example.com', password: NEW_PASSWORD })
+      .expect(200);
+  });
+
+  it('stops the old password working', async () => {
+    const { agent } = await signedIn('oldgone@example.com');
+    await change(agent, PASSWORD, NEW_PASSWORD).expect(200);
+
+    await request(app)
+      .post('/api/v1/auth/login')
+      .set('Origin', ORIGIN)
+      .send({ email: 'oldgone@example.com', password: PASSWORD })
+      .expect(401);
+  });
+
+  /**
+   * The gate that turns "has a session" into "knows the secret". Without it an
+   * unattended laptop is a permanently stolen account.
+   */
+  it('refuses without the correct current password, and changes nothing', async () => {
+    const { agent } = await signedIn('wrongcurrent@example.com');
+
+    const res = await change(agent, 'not the right one', NEW_PASSWORD);
+    expect(res.status).toBe(422);
+    expect(res.body.error.fields.currentPassword).toBeTruthy();
+
+    // The old password still works, so nothing was written.
+    await request(app)
+      .post('/api/v1/auth/login')
+      .set('Origin', ORIGIN)
+      .send({ email: 'wrongcurrent@example.com', password: PASSWORD })
+      .expect(200);
+  });
+
+  it('refuses a new password that is the same as the old one', async () => {
+    const { agent } = await signedIn('same@example.com');
+    const res = await change(agent, PASSWORD, PASSWORD);
+    expect(res.status).toBe(422);
+    expect(res.body.error.fields.password).toBeTruthy();
+  });
+
+  it('refuses a weak or breached new password', async () => {
+    const { agent } = await signedIn('weak@example.com');
+    await change(agent, PASSWORD, 'short').expect(422);
+    await change(agent, PASSWORD, 'password123').expect(422);
+  });
+
+  it('needs a session at all', async () => {
+    await request(app)
+      .post('/api/v1/auth/change-password')
+      .set('Origin', ORIGIN)
+      .send({ currentPassword: PASSWORD, password: NEW_PASSWORD })
+      .expect(401);
+  });
+
+  /** Evicting an attacker is the point of the whole feature. */
+  it('signs out every OTHER device', async () => {
+    const { agent } = await signedIn('evict@example.com');
+    const other = await secondDevice('evict@example.com');
+
+    // The other device works before the change.
+    await other.get('/api/v1/auth/me').expect(200);
+
+    const res = await change(agent, PASSWORD, NEW_PASSWORD).expect(200);
+    expect(res.body.otherSessionsEnded).toBeGreaterThanOrEqual(1);
+
+    // Its refresh token is dead, so it cannot get a new access token.
+    await other.post('/api/v1/auth/refresh').set('Origin', ORIGIN).expect(401);
+  });
+
+  /** And does NOT sign out the person who just did it. */
+  it('keeps the session that made the change', async () => {
+    const { agent } = await signedIn('stayin@example.com');
+    await change(agent, PASSWORD, NEW_PASSWORD).expect(200);
+
+    await agent.get('/api/v1/auth/me').expect(200);
+    await agent.post('/api/v1/auth/refresh').set('Origin', ORIGIN).expect(200);
+  });
+
+  it('tells the account owner it happened', async () => {
+    const sent = vi.spyOn(emailService, 'sendPasswordChanged').mockResolvedValue();
+    sent.mockClear();
+    const { agent } = await signedIn('notified@example.com');
+
+    await change(agent, PASSWORD, NEW_PASSWORD).expect(200);
+
+    expect(sent).toHaveBeenCalledOnce();
+    expect(sent.mock.calls[0]![0]).toMatchObject({ to: 'notified@example.com' });
+  });
+
+  it('burns any outstanding reset link', async () => {
+    const { agent, userId } = await signedIn('burnreset@example.com');
+    await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .set('Origin', ORIGIN)
+      .send({ email: 'burnreset@example.com' })
+      .expect(200);
+
+    await change(agent, PASSWORD, NEW_PASSWORD).expect(200);
+
+    const outstanding = await prisma.verificationToken.count({
+      where: { userId, type: 'PASSWORD_RESET', consumedAt: null },
+    });
+    expect(outstanding).toBe(0);
+  });
+});

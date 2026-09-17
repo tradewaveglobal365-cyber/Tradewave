@@ -65,6 +65,29 @@ export const loginSchema = z.object({
   password: z.string({ error: 'Password is required' }).min(1, 'Password is required'),
 });
 
+/**
+ * CONTRACT MIRROR — see tradewave-web/lib/schemas.ts.
+ *
+ * The current password is required even though the caller is already
+ * authenticated. A session cookie proves the browser was signed in at some
+ * point; it does not prove the person at the keyboard is the account owner. An
+ * unattended laptop or a stolen session is exactly the case this stops, and it
+ * is why every bank asks the same thing.
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z
+      .string({ error: 'Enter your current password' })
+      .min(1, 'Enter your current password'),
+    password,
+  })
+  .refine((v) => v.currentPassword !== v.password, {
+    message: 'That is the password you already have — choose a different one',
+    path: ['password'],
+  });
+
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
 export const forgotPasswordSchema = z.object({ email });
 
 export const resetPasswordSchema = z.object({

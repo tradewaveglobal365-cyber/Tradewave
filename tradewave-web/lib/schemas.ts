@@ -202,3 +202,33 @@ export const setPayoutAccountSchema = z.object({
 });
 
 export type SetPayoutAccountValues = z.input<typeof setPayoutAccountSchema>;
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * CONTRACT MIRROR of changePasswordSchema in
+ * tradewave-api/src/modules/auth/schemas.ts
+ *
+ * The breached-password check is server-side only — the list is large and it is
+ * not worth shipping to a browser to fail a check the API repeats anyway. So a
+ * password can pass here and still be refused, and the form has to surface
+ * that field error rather than assume its own validation was the last word.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+export const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, 'Enter your current password'),
+    password: z
+      .string()
+      .min(8, 'Use at least 8 characters')
+      .max(128, 'Password is too long'),
+    confirm: z.string().min(1, 'Confirm your new password'),
+  })
+  .refine((v) => v.password === v.confirm, {
+    message: 'These do not match',
+    path: ['confirm'],
+  })
+  .refine((v) => v.currentPassword !== v.password, {
+    message: 'That is the password you already have — choose a different one',
+    path: ['password'],
+  });
+
+export type ChangePasswordValues = z.input<typeof changePasswordSchema>;
