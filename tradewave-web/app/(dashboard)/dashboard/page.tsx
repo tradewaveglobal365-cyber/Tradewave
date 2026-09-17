@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { ArrowUpRight, Building2, TrendingUp } from 'lucide-react';
+import { ArrowUpRight, Building2, Lock, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getCurrentUser } from '@/lib/session';
 import { getPayoutAccount, getWallet } from '@/lib/wallet';
@@ -36,6 +36,23 @@ export default async function DashboardPage() {
             : 'Get set up, then put your first capital to work.'
         }
       />
+
+      {/* Being unable to act with no explanation is the worst version of a
+          freeze. The reason lives in the email we sent; this is what stops the
+          product looking broken in the meantime. */}
+      {user.status === 'RESTRICTED' ? (
+        <div className="mb-5 rounded-xl border border-pending/40 bg-pending/5 px-4 py-3.5">
+          <p className="flex items-center gap-1.5 text-[0.8125rem] font-medium text-foreground">
+            <Lock className="size-3.5 text-pending" />
+            Your account is temporarily restricted
+          </p>
+          <p className="mt-1 text-[0.75rem] leading-relaxed text-muted-foreground">
+            Your balance and any investments you hold are unaffected and remain yours. For now
+            you cannot add funds, invest or withdraw. We emailed you the reason — reply to that
+            message if you think it is a mistake.
+          </p>
+        </div>
+      ) : null}
 
       <SetupChecklist
               user={user}

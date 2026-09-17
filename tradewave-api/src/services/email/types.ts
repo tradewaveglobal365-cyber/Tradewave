@@ -153,6 +153,44 @@ export interface PasswordChangedEmail {
   resetUrl: string;
 }
 
+/**
+ * Staff changed the state of somebody's account.
+ *
+ * Carries the reason, because a freeze with no explanation is the shape of a
+ * scam and the investor will assume the worst — correctly, if we say nothing.
+ */
+export interface AccountStatusChangedEmail {
+  to: string;
+  firstName: string;
+  status: 'ACTIVE' | 'PENDING_VERIFICATION' | 'RESTRICTED' | 'SUSPENDED';
+  reason: string;
+  url: string;
+}
+
+/** They have to verify their identity again. */
+export interface KycResetRequiredEmail {
+  to: string;
+  firstName: string;
+  reason: string;
+  url: string;
+}
+
+/**
+ * Money was added to or taken from a wallet by hand.
+ *
+ * Always sent. Money appearing or disappearing with no explanation is
+ * indistinguishable from a bug, or from theft.
+ */
+export interface BalanceAdjustedEmail {
+  to: string;
+  firstName: string;
+  credit: boolean;
+  amount: string;
+  newBalance: string;
+  reason: string;
+  url: string;
+}
+
 export interface EmailService {
   sendVerification(input: VerificationEmail): Promise<void>;
   sendPasswordReset(input: PasswordResetEmail): Promise<void>;
@@ -166,4 +204,7 @@ export interface EmailService {
   sendReferralBonus(input: ReferralBonusEmail): Promise<void>;
   sendInvestmentMatured(input: InvestmentMaturedEmail): Promise<void>;
   sendPasswordChanged(input: PasswordChangedEmail): Promise<void>;
+  sendAccountStatusChanged(input: AccountStatusChangedEmail): Promise<void>;
+  sendKycResetRequired(input: KycResetRequiredEmail): Promise<void>;
+  sendBalanceAdjusted(input: BalanceAdjustedEmail): Promise<void>;
 }

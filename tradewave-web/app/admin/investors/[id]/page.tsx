@@ -5,6 +5,9 @@ import { ArrowLeft, BadgeCheck, Landmark, Wallet } from 'lucide-react';
 import { getAdminInvestor } from '@/lib/admin';
 import { formatUsd } from '@/lib/money';
 import { KycPill } from '@/components/admin/investor-pills';
+import { AccountActions } from '@/components/admin/account-actions';
+import { AdjustBalance } from '@/components/admin/adjust-balance';
+import { AccountActivity } from '@/components/admin/account-activity';
 
 export const metadata: Metadata = { title: 'Investor · Admin' };
 
@@ -29,10 +32,13 @@ function date(value: string | null): string {
 /**
  * One investor, everything about them on one screen.
  *
- * Read-only. Suspending an account, forcing a KYC recheck and adjusting a
- * balance are all real needs and all of them are decisions about money or
- * access — they deserve their own design rather than a button added to a
- * detail page because there was room for one.
+ * The controls live in their own cards rather than as buttons scattered among
+ * the figures, and each asks for a reason before it fires — these are the only
+ * operations where one person reaches into another's money or access, and the
+ * reason is what the audit trail is made of.
+ *
+ * Adjusting a balance is deliberately kept apart from the rest and styled as
+ * destructive: it is the one control here that creates or destroys money.
  */
 export default async function InvestorPage({
   params,
@@ -144,6 +150,10 @@ export default async function InvestorPage({
         </div>
 
         <div className="space-y-5">
+          <AccountActions investor={investor} />
+          <AdjustBalance investorId={investor.id} balanceCents={investor.balanceCents} />
+          <AccountActivity actions={investor.actions} />
+
           <Card title="Account">
             <Row label="Status" value={investor.status.toLowerCase().replace(/_/g, ' ')} />
             <Row label="Email verified" value={investor.emailVerified ? 'Yes' : 'No'} />

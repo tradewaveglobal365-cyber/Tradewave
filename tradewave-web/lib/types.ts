@@ -9,7 +9,13 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-export type UserStatus = 'PENDING_VERIFICATION' | 'ACTIVE' | 'SUSPENDED';
+export type UserStatus =
+  | 'PENDING_VERIFICATION'
+  | 'ACTIVE'
+  /** Can sign in and read everything, but cannot move money. */
+  | 'RESTRICTED'
+  /** Cannot sign in at all. */
+  | 'SUSPENDED';
 
 /**
  * Identity verification, tracked separately from UserStatus because the two are

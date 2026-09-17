@@ -363,6 +363,92 @@ export function passwordChangedTemplate(
   };
 }
 
+export function accountStatusChangedTemplate(
+  firstName: string,
+  status: 'ACTIVE' | 'PENDING_VERIFICATION' | 'RESTRICTED' | 'SUSPENDED',
+  reason: string,
+  url: string,
+) {
+  const copy = {
+    SUSPENDED: {
+      subject: 'Your Tradewave account has been suspended',
+      heading: 'Your account has been suspended',
+      body: 'You will not be able to sign in while this is in place. Your balance and any investments you hold are unaffected and remain yours.',
+    },
+    RESTRICTED: {
+      subject: 'Your Tradewave account has been restricted',
+      heading: 'Your account has been restricted',
+      body: 'You can still sign in and see everything — your balance, your holdings and your history are all where you left them. What you cannot do for now is move money in or out.',
+    },
+    ACTIVE: {
+      subject: 'Your Tradewave account has been reinstated',
+      heading: 'Your account has been reinstated',
+      body: 'Everything is back to normal. You can sign in, invest and withdraw as before.',
+    },
+    PENDING_VERIFICATION: {
+      subject: 'Your Tradewave account has been reinstated',
+      heading: 'Your account has been reinstated',
+      body: 'Everything is back to normal. Confirm your email address to finish setting the account up.',
+    },
+  }[status];
+
+  return {
+    subject: copy.subject,
+    html: shell(
+      copy.heading,
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, ${escapeHtml(copy.body)}</p>
+       ${rows([['Reason', reason]])}
+       <p style="margin:20px 0 0;">If you think this is a mistake, reply to this email and we will look again.</p>`,
+      { label: 'Open Tradewave', url },
+    ),
+    text: `Hi ${firstName}, ${copy.body}\n\nReason: ${reason}\n\nIf you think this is a mistake, reply to this email and we will look again.\n\n${url}`,
+  };
+}
+
+export function kycResetRequiredTemplate(firstName: string, reason: string, url: string) {
+  return {
+    subject: 'Please verify your identity again',
+    html: shell(
+      'Please verify your identity again',
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, we need you to go through identity verification once more before you can invest again.</p>
+       ${rows([['Reason', reason]])}
+       <p style="margin:20px 0 0;">It takes about a minute — photograph an ID and take a selfie. Your balance and any investments you hold are unaffected.</p>`,
+      { label: 'Verify identity', url },
+    ),
+    text: `Hi ${firstName}, we need you to go through identity verification once more before you can invest again.\n\nReason: ${reason}\n\nIt takes about a minute. Your balance and investments are unaffected.\n\n${url}`,
+  };
+}
+
+export function balanceAdjustedTemplate(params: {
+  firstName: string;
+  credit: boolean;
+  amount: string;
+  newBalance: string;
+  reason: string;
+  url: string;
+}) {
+  const { firstName, credit, amount, newBalance, reason, url } = params;
+  const verb = credit ? 'added to' : 'taken from';
+
+  return {
+    subject: credit
+      ? `${amount} was added to your wallet`
+      : `${amount} was taken from your wallet`,
+    html: shell(
+      credit ? 'Money added to your wallet' : 'Money taken from your wallet',
+      `<p style="margin:0;">Hi ${escapeHtml(firstName)}, ${escapeHtml(amount)} has been ${verb} your Tradewave wallet by our team.</p>
+       ${rows([
+         [credit ? 'Added' : 'Taken', amount],
+         ['Reason', reason],
+         ['New balance', newBalance],
+       ])}
+       <p style="margin:20px 0 0;color:#0E1512;"><strong>If this does not look right, reply to this email.</strong> It will appear in your transactions as an adjustment.</p>`,
+      { label: 'View your wallet', url },
+    ),
+    text: `Hi ${firstName}, ${amount} has been ${verb} your Tradewave wallet by our team.\n\nReason: ${reason}\nNew balance: ${newBalance}\n\nIf this does not look right, reply to this email.\n\n${url}`,
+  };
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,

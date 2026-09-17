@@ -107,6 +107,15 @@ export interface AdminInvestorList {
   pageSize: number;
 }
 
+export interface AdminActionRecord {
+  id: string;
+  type: string;
+  reason: string;
+  detail: unknown;
+  createdAt: string;
+  actor: { id: string; firstName: string; lastName: string; email: string } | null;
+}
+
 export interface AdminInvestorDetail {
   id: string;
   email: string;
@@ -121,6 +130,9 @@ export interface AdminInvestorDetail {
   kycVerifiedAt: string | null;
   lastLoginAt: string | null;
   createdAt: string;
+  withdrawalsBlockedAt: string | null;
+  kycResetAt: string | null;
+  actions: AdminActionRecord[];
 
   referralCode: string;
   referredBy: { id: string; firstName: string; lastName: string } | null;
@@ -233,6 +245,9 @@ export interface AdminWithdrawal {
   waitingHours: number;
   /** The destination moved in the last week — the thing a reviewer is here for. */
   destinationChangedRecently: boolean;
+  /** Account frozen, or withdrawals blocked — approving is refused either way. */
+  investorFrozen: boolean;
+  investorStatus: string;
   nameResolved: boolean;
   user: { id: string; email: string; firstName: string; lastName: string };
 }
@@ -243,6 +258,9 @@ export async function getAdminWithdrawals(): Promise<AdminWithdrawal[]> {
 }
 
 export interface WithdrawalWindowSettings {
+  /** Stops every withdrawal for everybody, whatever the schedule says. */
+  paused: boolean;
+  pausedReason: string | null;
   enabled: boolean;
   /** 0 = Sunday through 6 = Saturday. */
   daysOfWeek: number[];

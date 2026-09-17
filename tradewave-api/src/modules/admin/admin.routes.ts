@@ -22,7 +22,16 @@ import {
 } from '../wallet/schemas';
 import * as window from '../wallet/withdrawal-window.service';
 import * as maturity from '../investment/maturity.service';
+import * as account from './account.service';
 import {
+  accountStatusSchema,
+  adjustBalanceSchema,
+  reasonOnlySchema,
+  withdrawalBlockSchema,
+  type AccountStatusInput,
+  type AdjustBalanceInput,
+  type ReasonOnlyInput,
+  type WithdrawalBlockInput,
   createPropertySchema,
   propertyStatusSchema,
   updatePropertySchema,
@@ -167,6 +176,100 @@ adminRouter.post('/maturities/:id/settle', async (req: Request, res: Response) =
     },
   });
 });
+
+// ── Account controls ────────────────────────────────────────────────────────
+
+/**
+ * Doing things to an investor's account.
+ *
+ * Every route takes a mandatory reason, and every one writes an AdminAction.
+ * POST throughout rather than PATCH or PUT — PUT is missing from the CORS
+ * methods allowlist in app.ts, and these are events rather than edits: what
+ * happened and why is the record, not the resulting field value.
+ */
+adminRouter.post(
+  '/investors/:id/status',
+  validateBody(accountStatusSchema),
+  async (req: Request, res: Response) => {
+    if (!req.auth) throw badRequest('Not signed in.');
+    const { action, reason } = req.body as AccountStatusInput;
+    res.json(
+      await account.setAccountStatus({
+        actorId: req.auth.userId,
+        subjectId: id(req),
+        action,
+        reason,
+      }),
+    );
+  },
+);
+
+adminRouter.post(
+  '/investors/:id/withdrawals',
+  validateBody(withdrawalBlockSchema),
+  async (req: Request, res: Response) => {
+    if (!req.auth) throw badRequest('Not signed in.');
+    const { action, reason } = req.body as WithdrawalBlockInput;
+    res.json(
+      await account.setWithdrawalBlock({
+        actorId: req.auth.userId,
+        subjectId: id(req),
+        action,
+        reason,
+      }),
+    );
+  },
+);
+
+adminRouter.post(
+  '/investors/:id/kyc-reset',
+  validateBody(reasonOnlySchema),
+  async (req: Request, res: Response) => {
+    if (!req.auth) throw badRequest('Not signed in.');
+    const { reason } = req.body as ReasonOnlyInput;
+    res.json(
+      await account.forceKycReverification({
+        actorId: req.auth.userId,
+        subjectId: id(req),
+        reason,
+      }),
+    );
+  },
+);
+
+adminRouter.post(
+  '/investors/:id/verify-email',
+  validateBody(reasonOnlySchema),
+  async (req: Request, res: Response) => {
+    if (!req.auth) throw badRequest('Not signed in.');
+    const { reason } = req.body as ReasonOnlyInput;
+    res.json(
+      await account.markEmailVerified({
+        actorId: req.auth.userId,
+        subjectId: id(req),
+        reason,
+      }),
+    );
+  },
+);
+
+/** The only route in the product that creates or destroys money outright. */
+adminRouter.post(
+  '/investors/:id/adjust-balance',
+  validateBody(adjustBalanceSchema),
+  async (req: Request, res: Response) => {
+    if (!req.auth) throw badRequest('Not signed in.');
+    const { amountCents, reason } = req.body as AdjustBalanceInput;
+    res.json(
+      await account.adjustBalance({
+        actorId: req.auth.userId,
+        subjectId: id(req),
+        amountCents,
+        reason,
+      }),
+    );
+  },
+);
 
 // ── Investors ────────────────────────────────────────────────────────────────
 

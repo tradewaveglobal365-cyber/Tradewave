@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { ArrowUpRight, ShieldAlert } from 'lucide-react';
+import { ArrowUpRight, ShieldAlert, Lock } from 'lucide-react';
 import { EmptyState, PageHeader } from '@/components/dashboard/page-header';
 import { WithdrawalActions } from '@/components/admin/withdrawal-actions';
 import { WithdrawalWindowForm } from '@/components/admin/withdrawal-window-form';
@@ -126,6 +126,14 @@ function WithdrawalRow({ withdrawal: w }: { withdrawal: AdminWithdrawal }) {
           {w.accountNumberMasked}
         </p>
         <p className="mt-0.5 truncate text-[0.75rem] text-muted-foreground">{w.accountName}</p>
+        {/* Approving is refused server-side either way. This is what stops the
+            row looking ordinary to somebody working the queue quickly. */}
+        {w.investorFrozen ? (
+          <p className="mt-1 inline-flex items-center gap-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[0.625rem] font-semibold text-destructive">
+            <Lock className="size-2.5" />
+            Account {w.investorStatus.toLowerCase()}
+          </p>
+        ) : null}
       </td>
       <td className="px-4 py-3 text-right">
         <p className="text-[0.8125rem] font-medium text-foreground tabular-nums">

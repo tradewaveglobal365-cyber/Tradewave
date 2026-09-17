@@ -58,6 +58,11 @@ export interface KycStatusView {
   attemptsRemaining: number;
 }
 
+/** The later of two instants, for a window that may also be cut short by a reset. */
+function latestOf(a: Date, b: Date | undefined): Date {
+  return b && b.getTime() > a.getTime() ? b : a;
+}
+
 /** A pending attempt old enough that waiting is no longer a reasonable ask. */
 function isStale(latest: KycVerification | null): boolean {
   if (!latest || latest.status !== 'PENDING') return false;
@@ -294,7 +299,7 @@ export async function getStatus(userId: string): Promise<KycStatusView> {
 export async function submit(userId: string): Promise<KycStatusView> {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { kycStatus: true, firstName: true, lastName: true, email: true },
+    select: { kycStatus: true, kycResetAt: true, firstName: true, lastName: true, email: true },
   });
 
   // Already through: never start another.
@@ -326,15 +331,29 @@ export async function submit(userId: string): Promise<KycStatusView> {
 
   // No duplicate check here any more: nothing identifies the document until the
   // provider reads it. The check now lives in applyDecision.
+  // Both counters start at kycResetAt when an admin has sent this user back
+  // through verification. A decision WE made must not spend an allowance the
+  // investor never used — without this, forcing a re-check on somebody at nine
+  // of ten lifetime attempts would leave them one.
+  const since = user.kycResetAt ?? undefined;
+
   const [dayCount, lifetimeCount] = await Promise.all([
     prisma.kycVerification.count({
       where: {
         userId,
         status: { not: 'EXPIRED' },
-        submittedAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        submittedAt: {
+          gte: latestOf(new Date(Date.now() - 24 * 60 * 60 * 1000), since),
+        },
       },
     }),
-    prisma.kycVerification.count({ where: { userId, status: { not: 'EXPIRED' } } }),
+    prisma.kycVerification.count({
+      where: {
+        userId,
+        status: { not: 'EXPIRED' },
+        ...(since ? { submittedAt: { gte: since } } : {}),
+      },
+    }),
   ]);
 
   if (dayCount >= MAX_ATTEMPTS_PER_DAY || lifetimeCount >= MAX_ATTEMPTS_LIFETIME) {

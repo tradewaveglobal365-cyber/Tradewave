@@ -77,3 +77,50 @@ export const propertyStatusSchema = z.object({
 
 export type CreatePropertyInput = z.infer<typeof createPropertySchema>;
 export type UpdatePropertyInput = z.infer<typeof updatePropertySchema>;
+
+// ── Account controls ─────────────────────────────────────────────────────────
+
+/**
+ * CONTRACT MIRROR — see tradewave-web/lib/schemas.ts.
+ *
+ * A reason is mandatory on every one of these. They are the only operations
+ * where one person reaches into another's money or access, and an audit log
+ * full of blanks answers nothing when somebody eventually asks.
+ */
+const reason = z
+  .string({ error: 'Say why' })
+  .trim()
+  .min(5, 'Say why, briefly — this is recorded and the investor may be told it')
+  .max(300, 'That is too long');
+
+export const accountStatusSchema = z.object({
+  action: z.enum(['suspend', 'reinstate', 'restrict', 'unrestrict']),
+  reason,
+});
+
+export const withdrawalBlockSchema = z.object({
+  action: z.enum(['block', 'unblock']),
+  reason,
+});
+
+export const reasonOnlySchema = z.object({ reason });
+
+export const adjustBalanceSchema = z.object({
+  /**
+   * SIGNED cents, as a string. Negative debits the investor.
+   *
+   * A string for the same reason every other amount in this codebase is one —
+   * a JSON number invites a float round-trip on a value that has to stay exact.
+   */
+  amountCents: z
+    .string({ error: 'Enter an amount' })
+    .regex(/^-?\d+$/, 'Amount must be a whole number of cents')
+    .transform((v) => BigInt(v))
+    .refine((v) => v !== 0n, 'Enter an amount other than zero'),
+  reason,
+});
+
+export type AccountStatusInput = z.infer<typeof accountStatusSchema>;
+export type WithdrawalBlockInput = z.infer<typeof withdrawalBlockSchema>;
+export type ReasonOnlyInput = z.infer<typeof reasonOnlySchema>;
+export type AdjustBalanceInput = z.infer<typeof adjustBalanceSchema>;

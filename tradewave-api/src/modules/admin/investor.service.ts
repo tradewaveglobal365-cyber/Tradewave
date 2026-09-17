@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { notFound } from '../../lib/errors';
+import { listActionsForSubject, type AdminActionView } from './audit.service';
 
 /**
  * Who the investors are, and what each of them has done.
@@ -9,10 +10,10 @@ import { notFound } from '../../lib/errors';
  * verify their identity, fund a wallet and buy into a property, and nobody at
  * Tradewave could see any of it without opening a database client.
  *
- * Read-only, deliberately. Suspending an account, forcing a KYC re-check and
- * reversing a ledger entry are all real needs, and all of them are decisions
- * about money or access that deserve their own design rather than being
- * bolted onto a list screen.
+ * The READS live here. The actions that change an account — suspend, restrict,
+ * block withdrawals, force a re-check, adjust a balance — live in
+ * account.service, with their own audit trail, because they are decisions about
+ * money or access rather than a list screen.
  *
  * ── What is deliberately NOT returned ─────────────────────────────────────
  * passwordHash and KycVerification.documentHash never leave this module. The
@@ -39,6 +40,7 @@ export interface AdminInvestorRow {
   investedCents: string;
   investmentCount: number;
   hasPayoutAccount: boolean;
+  withdrawalsBlocked: boolean;
   createdAt: Date;
 }
 
@@ -97,6 +99,7 @@ export async function listInvestors(params: {
         createdAt: true,
         wallet: { select: { balanceCents: true } },
         payoutAccount: { select: { id: true } },
+        withdrawalsBlockedAt: true,
         _count: { select: { investments: true } },
       },
     }),
@@ -129,6 +132,7 @@ export async function listInvestors(params: {
       investedCents: (investedByUser.get(u.id) ?? 0n).toString(),
       investmentCount: u._count.investments,
       hasPayoutAccount: u.payoutAccount !== null,
+      withdrawalsBlocked: u.withdrawalsBlockedAt !== null,
       createdAt: u.createdAt,
     })),
     total,
@@ -156,6 +160,13 @@ export interface AdminInvestorDetail {
   kycVerifiedAt: Date | null;
   lastLoginAt: Date | null;
   createdAt: Date;
+
+  /** Set while withdrawals are blocked for this investor specifically. */
+  withdrawalsBlockedAt: Date | null;
+  /** When staff last sent them back through identity verification. */
+  kycResetAt: Date | null;
+  /** What staff have done to this account, newest first. */
+  actions: AdminActionView[];
 
   referralCode: string;
   referredBy: { id: string; firstName: string; lastName: string } | null;
@@ -228,6 +239,8 @@ export async function getInvestor(userId: string): Promise<AdminInvestorDetail> 
       kycVerifiedAt: true,
       lastLoginAt: true,
       createdAt: true,
+      withdrawalsBlockedAt: true,
+      kycResetAt: true,
       referralCode: true,
       referredBy: { select: { id: true, firstName: true, lastName: true } },
       _count: { select: { referrals: true } },
@@ -293,6 +306,8 @@ export async function getInvestor(userId: string): Promise<AdminInvestorDetail> 
 
   if (!user) throw notFound('That investor does not exist.');
 
+  const actions = await listActionsForSubject(userId);
+
   return {
     id: user.id,
     email: user.email,
@@ -307,6 +322,9 @@ export async function getInvestor(userId: string): Promise<AdminInvestorDetail> 
     kycVerifiedAt: user.kycVerifiedAt,
     lastLoginAt: user.lastLoginAt,
     createdAt: user.createdAt,
+    withdrawalsBlockedAt: user.withdrawalsBlockedAt,
+    kycResetAt: user.kycResetAt,
+    actions,
 
     referralCode: user.referralCode,
     referredBy: user.referredBy,

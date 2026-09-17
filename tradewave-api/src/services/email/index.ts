@@ -14,6 +14,9 @@ import type {
   ReferralBonusEmail,
   InvestmentMaturedEmail,
   PasswordChangedEmail,
+  AccountStatusChangedEmail,
+  KycResetRequiredEmail,
+  BalanceAdjustedEmail,
   VerificationEmail,
 } from './types';
 import {
@@ -28,6 +31,9 @@ import {
   referralBonusTemplate,
   investmentMaturedTemplate,
   passwordChangedTemplate,
+  accountStatusChangedTemplate,
+  kycResetRequiredTemplate,
+  balanceAdjustedTemplate,
   verificationTemplate,
 } from './templates';
 
@@ -100,6 +106,18 @@ class ConsoleEmailService implements EmailService {
 
   async sendPasswordChanged({ to, otherSessionsEnded }: PasswordChangedEmail): Promise<void> {
     logger.info({ to, otherSessionsEnded }, '[email:password-changed]');
+  }
+
+  async sendAccountStatusChanged({ to, status }: AccountStatusChangedEmail): Promise<void> {
+    logger.info({ to, status }, '[email:account-status-changed]');
+  }
+
+  async sendKycResetRequired({ to }: KycResetRequiredEmail): Promise<void> {
+    logger.info({ to }, '[email:kyc-reset-required]');
+  }
+
+  async sendBalanceAdjusted({ to, credit, amount }: BalanceAdjustedEmail): Promise<void> {
+    logger.info({ to, credit, amount }, '[email:balance-adjusted]');
   }
 }
 
@@ -272,6 +290,32 @@ class ResendEmailService implements EmailService {
     resetUrl,
   }: PasswordChangedEmail): Promise<void> {
     const t = passwordChangedTemplate(firstName, otherSessionsEnded, resetUrl);
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendAccountStatusChanged({
+    to,
+    firstName,
+    status,
+    reason,
+    url,
+  }: AccountStatusChangedEmail): Promise<void> {
+    const t = accountStatusChangedTemplate(firstName, status, reason, url);
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendKycResetRequired({
+    to,
+    firstName,
+    reason,
+    url,
+  }: KycResetRequiredEmail): Promise<void> {
+    const t = kycResetRequiredTemplate(firstName, reason, url);
+    await this.send(to, t.subject, t.html, t.text);
+  }
+
+  async sendBalanceAdjusted({ to, ...rest }: BalanceAdjustedEmail): Promise<void> {
+    const t = balanceAdjustedTemplate(rest);
     await this.send(to, t.subject, t.html, t.text);
   }
 }

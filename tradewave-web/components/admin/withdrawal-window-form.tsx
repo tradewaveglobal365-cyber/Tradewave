@@ -47,6 +47,8 @@ export function WithdrawalWindowForm({
   state: WithdrawalWindowState;
 }) {
   const router = useRouter();
+  const [paused, setPaused] = useState(window.paused);
+  const [pausedReason, setPausedReason] = useState(window.pausedReason ?? '');
   const [enabled, setEnabled] = useState(window.enabled);
   const [days, setDays] = useState<number[]>(window.daysOfWeek);
   const [opens, setOpens] = useState(toTime(window.opensAtMinute));
@@ -62,7 +64,10 @@ export function WithdrawalWindowForm({
     opensAtMinute !== null &&
     closesAtMinute !== null &&
     closesAtMinute > opensAtMinute &&
-    (!enabled || days.length > 0);
+    (!enabled || days.length > 0) &&
+    // A pause with no explanation is the shape of a scam — investors are shown
+    // this sentence when their withdrawal is refused.
+    (!paused || pausedReason.trim().length > 0);
 
   function toggleDay(value: number) {
     setSaved(false);
@@ -78,7 +83,15 @@ export function WithdrawalWindowForm({
     try {
       await apiFetch('/admin/withdrawal-window', {
         method: 'POST',
-        body: { enabled, daysOfWeek: days, opensAtMinute, closesAtMinute, timezone },
+        body: {
+          paused,
+          pausedReason: paused ? pausedReason.trim() : undefined,
+          enabled,
+          daysOfWeek: days,
+          opensAtMinute,
+          closesAtMinute,
+          timezone,
+        },
       });
       setSaved(true);
       router.refresh();
@@ -107,11 +120,69 @@ export function WithdrawalWindowForm({
         </div>
         <span
           className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium ${
-            state.open ? 'bg-gain/10 text-gain' : 'bg-muted text-muted-foreground'
+            paused
+              ? 'bg-destructive/10 text-destructive'
+              : state.open
+                ? 'bg-gain/10 text-gain'
+                : 'bg-muted text-muted-foreground'
           }`}
         >
-          {state.open ? 'Open now' : 'Closed'}
+          {paused ? 'Paused' : state.open ? 'Open now' : 'Closed'}
         </span>
+      </div>
+
+      {/* The kill switch. Deliberately above the schedule and styled apart from
+          it: "no schedule" and "nothing may leave" are opposite things, and one
+          checkbox meaning both is how somebody opens the gates by accident. */}
+      <div
+        className={`mt-4 rounded-lg border px-3 py-3 ${
+          paused ? 'border-destructive/40 bg-destructive/5' : 'border-hairline'
+        }`}
+      >
+        <label className="flex items-start gap-2.5">
+          <input
+            type="checkbox"
+            checked={paused}
+            onChange={(e) => {
+              setPaused(e.target.checked);
+              setSaved(false);
+            }}
+            className="mt-0.5 size-4 shrink-0 rounded border-input accent-destructive"
+          />
+          <span className="text-[0.8125rem] text-foreground">
+            Pause all withdrawals
+            <span className="mt-0.5 block text-[0.75rem] text-muted-foreground">
+              Stops every withdrawal for everybody, whatever the schedule below says. For a
+              provider outage, an empty float, or while you are investigating something.
+            </span>
+          </span>
+        </label>
+
+        {paused ? (
+          <div className="mt-3">
+            <label
+              htmlFor="paused-reason"
+              className="block text-[0.75rem] font-medium text-foreground"
+            >
+              Reason investors are shown
+            </label>
+            <input
+              id="paused-reason"
+              value={pausedReason}
+              onChange={(e) => {
+                setPausedReason(e.target.value);
+                setSaved(false);
+              }}
+              placeholder="e.g. Our payment provider is having an outage"
+              className="mt-1 h-10 w-full rounded-lg border border-input bg-transparent px-3 text-[0.8125rem] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/30"
+            />
+            {pausedReason.trim() === '' ? (
+              <p role="alert" className="mt-1 text-[0.75rem] text-destructive">
+                Give a reason — it is shown to anyone who tries to withdraw.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <label className="mt-4 flex items-start gap-2.5">
