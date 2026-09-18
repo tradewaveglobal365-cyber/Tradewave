@@ -37,6 +37,10 @@ services:
         sync: false
       - key: EMAIL_FROM
         sync: false
+      # Where replies land. Several emails invite one — an account freeze, a
+      # balance adjustment — and without this they go to noreply@ and vanish.
+      - key: EMAIL_REPLY_TO
+        sync: false
 
       # The Vercel production URL, scheme included and no trailing slash.
       # Used for CORS, the CSRF origin check, and links inside emails.

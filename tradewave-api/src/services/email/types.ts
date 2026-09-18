@@ -191,6 +191,140 @@ export interface BalanceAdjustedEmail {
   url: string;
 }
 
+// ── Added with the email overhaul ────────────────────────────────────────────
+
+/** Sent once the address is actually confirmed, not when the link is issued. */
+export interface WelcomeEmail {
+  to: string;
+  firstName: string;
+  url: string;
+}
+
+/**
+ * A sign-in from a device we have not seen on this account.
+ *
+ * A security notice. Changing a payout account and changing a password both
+ * send one already; an unrecognised sign-in is the FIRST move an attacker
+ * makes, and it was the only one of the three that was silent.
+ */
+export interface NewDeviceSignInEmail {
+  to: string;
+  firstName: string;
+  device: string;
+  when: string;
+  resetUrl: string;
+}
+
+/** Five failed attempts. Somebody is guessing, and the owner should know. */
+export interface AccountLockedEmail {
+  to: string;
+  firstName: string;
+  minutes: number;
+  resetUrl: string;
+}
+
+/** The provider escalated the check to a human. No action needed. */
+export interface KycInReviewEmail {
+  to: string;
+  firstName: string;
+  url: string;
+}
+
+/** The check could not be started because OUR provider was unreachable. */
+export interface KycUnavailableEmail {
+  to: string;
+  firstName: string;
+  url: string;
+}
+
+/** They started verifying and never finished. The session link still works. */
+export interface KycAbandonedEmail {
+  to: string;
+  firstName: string;
+  url: string;
+}
+
+/**
+ * Money arrived and could not be credited yet.
+ *
+ * The worst silence in the product before this existed: real naira leaves an
+ * investor's bank, the wallet does not move, and nothing is said. From their
+ * side that is indistinguishable from the transfer vanishing.
+ */
+export interface DepositHeldEmail {
+  to: string;
+  firstName: string;
+  amountReceived: string;
+  url: string;
+}
+
+/** A week before a term ends. */
+export interface MaturityApproachingEmail {
+  to: string;
+  firstName: string;
+  propertyTitle: string;
+  payout: string;
+  maturesOn: string;
+  days: number;
+  url: string;
+}
+
+/**
+ * Released and sent to the bank.
+ *
+ * This is the moment the naira figure stops being an estimate — the rate is
+ * pinned at approval — so it is the first time the investor can be told what
+ * will actually land.
+ */
+export interface WithdrawalApprovedEmail {
+  to: string;
+  firstName: string;
+  amount: string;
+  naira: string;
+  rate: string;
+  bankName: string;
+  accountNumberMasked: string;
+  url: string;
+}
+
+/** Withdrawals blocked or unblocked for this investor specifically. */
+export interface WithdrawalsBlockedEmail {
+  to: string;
+  firstName: string;
+  blocked: boolean;
+  reason: string;
+  url: string;
+}
+
+/** Withdrawals paused for everybody. */
+export interface WithdrawalsPausedEmail {
+  to: string;
+  firstName: string;
+  reason: string;
+  url: string;
+}
+
+/** Somebody used your referral link. Named by initial, as /referrals does. */
+export interface ReferralSignupEmail {
+  to: string;
+  firstName: string;
+  inviteeName: string;
+  rate: string;
+  url: string;
+}
+
+/** The scheduled monthly statement. */
+export interface MonthlyStatementEmail {
+  to: string;
+  firstName: string;
+  period: string;
+  openingBalance: string;
+  closingBalance: string;
+  invested: string;
+  earned: string;
+  url: string;
+}
+
 export interface EmailService {
   sendVerification(input: VerificationEmail): Promise<void>;
   sendPasswordReset(input: PasswordResetEmail): Promise<void>;
@@ -207,4 +341,18 @@ export interface EmailService {
   sendAccountStatusChanged(input: AccountStatusChangedEmail): Promise<void>;
   sendKycResetRequired(input: KycResetRequiredEmail): Promise<void>;
   sendBalanceAdjusted(input: BalanceAdjustedEmail): Promise<void>;
+
+  sendWelcome(input: WelcomeEmail): Promise<void>;
+  sendNewDeviceSignIn(input: NewDeviceSignInEmail): Promise<void>;
+  sendAccountLocked(input: AccountLockedEmail): Promise<void>;
+  sendKycInReview(input: KycInReviewEmail): Promise<void>;
+  sendKycUnavailable(input: KycUnavailableEmail): Promise<void>;
+  sendKycAbandoned(input: KycAbandonedEmail): Promise<void>;
+  sendDepositHeld(input: DepositHeldEmail): Promise<void>;
+  sendMaturityApproaching(input: MaturityApproachingEmail): Promise<void>;
+  sendWithdrawalApproved(input: WithdrawalApprovedEmail): Promise<void>;
+  sendWithdrawalsBlocked(input: WithdrawalsBlockedEmail): Promise<void>;
+  sendWithdrawalsPaused(input: WithdrawalsPausedEmail): Promise<void>;
+  sendReferralSignup(input: ReferralSignupEmail): Promise<void>;
+  sendMonthlyStatement(input: MonthlyStatementEmail): Promise<void>;
 }

@@ -1,322 +1,273 @@
 import { Resend } from 'resend';
-import { env } from '../../config/env';
+import { env, isProduction } from '../../config/env';
 import { logger } from '../../lib/logger';
+import type { RenderedEmail } from './layout';
+import * as t from './templates';
 import type {
+  AccountLockedEmail,
+  AccountStatusChangedEmail,
+  BalanceAdjustedEmail,
   DepositCreditedEmail,
+  DepositHeldEmail,
   DuplicateSignupEmail,
   EmailService,
   InvestmentConfirmedEmail,
+  InvestmentMaturedEmail,
+  KycAbandonedEmail,
   KycDecidedEmail,
+  KycInReviewEmail,
+  KycResetRequiredEmail,
+  KycUnavailableEmail,
+  MaturityApproachingEmail,
+  MonthlyStatementEmail,
+  NewDeviceSignInEmail,
+  PasswordChangedEmail,
   PasswordResetEmail,
   PayoutAccountChangedEmail,
+  ReferralBonusEmail,
+  ReferralSignupEmail,
+  VerificationEmail,
+  WelcomeEmail,
+  WithdrawalApprovedEmail,
   WithdrawalRequestedEmail,
   WithdrawalSettledEmail,
-  ReferralBonusEmail,
-  InvestmentMaturedEmail,
-  PasswordChangedEmail,
-  AccountStatusChangedEmail,
-  KycResetRequiredEmail,
-  BalanceAdjustedEmail,
-  VerificationEmail,
+  WithdrawalsBlockedEmail,
+  WithdrawalsPausedEmail,
 } from './types';
-import {
-  depositCreditedTemplate,
-  duplicateSignupTemplate,
-  investmentConfirmedTemplate,
-  kycDecidedTemplate,
-  passwordResetTemplate,
-  payoutAccountChangedTemplate,
-  withdrawalRequestedTemplate,
-  withdrawalSettledTemplate,
-  referralBonusTemplate,
-  investmentMaturedTemplate,
-  passwordChangedTemplate,
-  accountStatusChangedTemplate,
-  kycResetRequiredTemplate,
-  balanceAdjustedTemplate,
-  verificationTemplate,
-} from './templates';
 
 export type { EmailService } from './types';
 
 /**
- * Dev driver. Prints the link to stdout so the whole auth flow is testable
- * before a sending domain has finished DNS verification.
+ * Which emails exist, and what they say.
+ *
+ * ── Why the templates are called in the BASE class ────────────────────────
+ * Because they used not to be. The console driver logged a one-line summary and
+ * never touched a template, so in development and in CI the whole of
+ * templates.ts was dead code — a render-time throw was invisible until it
+ * reached production, where four unguarded call sites in auth.service would
+ * have turned it into a 500 on a successful registration.
+ *
+ * Every method here renders, then hands a finished email to `deliver`. The two
+ * drivers differ only in what they do with it, so dev exercises exactly the
+ * code production runs.
  */
-class ConsoleEmailService implements EmailService {
-  private print(kind: string, to: string, url: string): void {
-    logger.info({ to, url }, `[email:${kind}]`);
-    // Deliberately also raw-printed: the pretty logger truncates long URLs and
-    // you need to be able to click this one.
-    console.log(`\n  ✉  ${kind} → ${to}\n     ${url}\n`);
+abstract class BaseEmailService implements EmailService {
+  protected abstract deliver(to: string, email: RenderedEmail): Promise<void>;
+
+  // ── Account ──────────────────────────────────────────────────────────────
+  async sendVerification(i: VerificationEmail): Promise<void> {
+    await this.deliver(i.to, t.verificationTemplate(i.firstName, i.verifyUrl));
+  }
+  async sendWelcome(i: WelcomeEmail): Promise<void> {
+    await this.deliver(i.to, t.welcomeTemplate(i.firstName, i.url));
+  }
+  async sendPasswordReset(i: PasswordResetEmail): Promise<void> {
+    await this.deliver(i.to, t.passwordResetTemplate(i.firstName, i.resetUrl));
+  }
+  async sendDuplicateSignupNotice(i: DuplicateSignupEmail): Promise<void> {
+    await this.deliver(i.to, t.duplicateSignupTemplate(i.firstName, i.loginUrl, i.resetUrl));
+  }
+  async sendPasswordChanged(i: PasswordChangedEmail): Promise<void> {
+    await this.deliver(
+      i.to,
+      t.passwordChangedTemplate(i.firstName, i.otherSessionsEnded, i.resetUrl),
+    );
+  }
+  async sendNewDeviceSignIn(i: NewDeviceSignInEmail): Promise<void> {
+    await this.deliver(i.to, t.newDeviceSignInTemplate(i));
+  }
+  async sendAccountLocked(i: AccountLockedEmail): Promise<void> {
+    await this.deliver(i.to, t.accountLockedTemplate(i.firstName, i.minutes, i.resetUrl));
+  }
+  async sendAccountStatusChanged(i: AccountStatusChangedEmail): Promise<void> {
+    await this.deliver(
+      i.to,
+      t.accountStatusChangedTemplate(i.firstName, i.status, i.reason, i.url),
+    );
   }
 
-  async sendVerification({ to, verifyUrl }: VerificationEmail): Promise<void> {
-    this.print('verify-email', to, verifyUrl);
+  // ── Identity ─────────────────────────────────────────────────────────────
+  async sendKycDecided(i: KycDecidedEmail): Promise<void> {
+    await this.deliver(
+      i.to,
+      t.kycDecidedTemplate(i.firstName, i.approved, i.url, i.reason, i.adoptedName),
+    );
+  }
+  async sendKycInReview(i: KycInReviewEmail): Promise<void> {
+    await this.deliver(i.to, t.kycInReviewTemplate(i.firstName, i.url));
+  }
+  async sendKycResetRequired(i: KycResetRequiredEmail): Promise<void> {
+    await this.deliver(i.to, t.kycResetRequiredTemplate(i.firstName, i.reason, i.url));
+  }
+  async sendKycUnavailable(i: KycUnavailableEmail): Promise<void> {
+    await this.deliver(i.to, t.kycUnavailableTemplate(i.firstName, i.url));
+  }
+  async sendKycAbandoned(i: KycAbandonedEmail): Promise<void> {
+    await this.deliver(i.to, t.kycAbandonedTemplate(i.firstName, i.url));
   }
 
-  async sendPasswordReset({ to, resetUrl }: PasswordResetEmail): Promise<void> {
-    this.print('password-reset', to, resetUrl);
+  // ── Money in ─────────────────────────────────────────────────────────────
+  async sendDepositCredited(i: DepositCreditedEmail): Promise<void> {
+    await this.deliver(
+      i.to,
+      t.depositCreditedTemplate(
+        i.firstName,
+        i.amountReceived,
+        i.amountCredited,
+        i.newBalance,
+        i.url,
+      ),
+    );
+  }
+  async sendDepositHeld(i: DepositHeldEmail): Promise<void> {
+    await this.deliver(i.to, t.depositHeldTemplate(i.firstName, i.amountReceived, i.url));
   }
 
-  async sendDuplicateSignupNotice({ to, loginUrl }: DuplicateSignupEmail): Promise<void> {
-    this.print('duplicate-signup', to, loginUrl);
+  // ── Investing ────────────────────────────────────────────────────────────
+  async sendInvestmentConfirmed(i: InvestmentConfirmedEmail): Promise<void> {
+    await this.deliver(
+      i.to,
+      t.investmentConfirmedTemplate(
+        i.firstName,
+        i.propertyTitle,
+        i.amount,
+        i.annualReturn,
+        i.termMonths,
+        i.maturesOn,
+        i.url,
+      ),
+    );
+  }
+  async sendMaturityApproaching(i: MaturityApproachingEmail): Promise<void> {
+    await this.deliver(i.to, t.maturityApproachingTemplate(i));
+  }
+  async sendInvestmentMatured(i: InvestmentMaturedEmail): Promise<void> {
+    await this.deliver(
+      i.to,
+      t.investmentMaturedTemplate(
+        i.firstName,
+        i.propertyTitle,
+        i.principal,
+        i.earned,
+        i.total,
+        i.url,
+      ),
+    );
   }
 
-  // The four below carry no link worth clicking in development, so they log a
-  // one-line summary instead — enough to see that the trigger fired.
-  async sendKycDecided({ to, approved, adoptedName }: KycDecidedEmail): Promise<void> {
-    logger.info({ to, approved, adoptedName }, '[email:kyc-decided]');
+  // ── Money out ────────────────────────────────────────────────────────────
+  async sendPayoutAccountChanged(i: PayoutAccountChangedEmail): Promise<void> {
+    await this.deliver(
+      i.to,
+      t.payoutAccountChangedTemplate(
+        i.firstName,
+        i.bankName,
+        i.accountNumberMasked,
+        i.accountName,
+        i.url,
+      ),
+    );
+  }
+  async sendWithdrawalRequested(i: WithdrawalRequestedEmail): Promise<void> {
+    await this.deliver(
+      i.to,
+      t.withdrawalRequestedTemplate(
+        i.firstName,
+        i.amount,
+        i.fee,
+        i.bankName,
+        i.accountNumberMasked,
+        i.url,
+      ),
+    );
+  }
+  async sendWithdrawalApproved(i: WithdrawalApprovedEmail): Promise<void> {
+    await this.deliver(i.to, t.withdrawalApprovedTemplate(i));
+  }
+  async sendWithdrawalSettled({ to, ...rest }: WithdrawalSettledEmail): Promise<void> {
+    await this.deliver(to, t.withdrawalSettledTemplate(rest));
+  }
+  async sendWithdrawalsBlocked(i: WithdrawalsBlockedEmail): Promise<void> {
+    await this.deliver(
+      i.to,
+      t.withdrawalsBlockedTemplate(i.firstName, i.blocked, i.reason, i.url),
+    );
+  }
+  async sendWithdrawalsPaused(i: WithdrawalsPausedEmail): Promise<void> {
+    await this.deliver(i.to, t.withdrawalsPausedTemplate(i.firstName, i.reason, i.url));
+  }
+  async sendBalanceAdjusted({ to, ...rest }: BalanceAdjustedEmail): Promise<void> {
+    await this.deliver(to, t.balanceAdjustedTemplate(rest));
   }
 
-  async sendDepositCredited({ to, amountCredited }: DepositCreditedEmail): Promise<void> {
-    logger.info({ to, amountCredited }, '[email:deposit-credited]');
+  // ── Referrals and statements ─────────────────────────────────────────────
+  async sendReferralSignup(i: ReferralSignupEmail): Promise<void> {
+    await this.deliver(
+      i.to,
+      t.referralSignupTemplate(i.firstName, i.inviteeName, i.rate, i.url),
+    );
   }
-
-  async sendInvestmentConfirmed({
-    to,
-    propertyTitle,
-    amount,
-  }: InvestmentConfirmedEmail): Promise<void> {
-    logger.info({ to, propertyTitle, amount }, '[email:investment-confirmed]');
+  async sendReferralBonus(i: ReferralBonusEmail): Promise<void> {
+    await this.deliver(
+      i.to,
+      t.referralBonusTemplate(i.firstName, i.inviteeName, i.amount, i.rate, i.url),
+    );
   }
-
-  async sendPayoutAccountChanged({
-    to,
-    accountNumberMasked,
-  }: PayoutAccountChangedEmail): Promise<void> {
-    logger.info({ to, accountNumberMasked }, '[email:payout-account-changed]');
-  }
-
-  async sendWithdrawalRequested({ to, amount }: WithdrawalRequestedEmail): Promise<void> {
-    logger.info({ to, amount }, '[email:withdrawal-requested]');
-  }
-
-  async sendWithdrawalSettled({ to, paid, amount }: WithdrawalSettledEmail): Promise<void> {
-    logger.info({ to, paid, amount }, '[email:withdrawal-settled]');
-  }
-
-  async sendReferralBonus({ to, amount }: ReferralBonusEmail): Promise<void> {
-    logger.info({ to, amount }, '[email:referral-bonus]');
-  }
-
-  async sendInvestmentMatured({ to, total }: InvestmentMaturedEmail): Promise<void> {
-    logger.info({ to, total }, '[email:investment-matured]');
-  }
-
-  async sendPasswordChanged({ to, otherSessionsEnded }: PasswordChangedEmail): Promise<void> {
-    logger.info({ to, otherSessionsEnded }, '[email:password-changed]');
-  }
-
-  async sendAccountStatusChanged({ to, status }: AccountStatusChangedEmail): Promise<void> {
-    logger.info({ to, status }, '[email:account-status-changed]');
-  }
-
-  async sendKycResetRequired({ to }: KycResetRequiredEmail): Promise<void> {
-    logger.info({ to }, '[email:kyc-reset-required]');
-  }
-
-  async sendBalanceAdjusted({ to, credit, amount }: BalanceAdjustedEmail): Promise<void> {
-    logger.info({ to, credit, amount }, '[email:balance-adjusted]');
+  async sendMonthlyStatement(i: MonthlyStatementEmail): Promise<void> {
+    await this.deliver(i.to, t.monthlyStatementTemplate(i));
   }
 }
 
-class ResendEmailService implements EmailService {
+/**
+ * Dev driver. Prints the subject and any link to stdout so the whole flow is
+ * testable before a sending domain has finished DNS verification.
+ *
+ * It renders the real template first — see the note on BaseEmailService.
+ */
+class ConsoleEmailService extends BaseEmailService {
+  protected async deliver(to: string, email: RenderedEmail): Promise<void> {
+    logger.info({ to, subject: email.subject }, '[email]');
+
+    // The pretty logger truncates long URLs and you need to be able to click
+    // this one, so it is raw-printed as well.
+    const link = /https?:\/\/\S+/.exec(email.text)?.[0];
+    console.log(`\n  ✉  ${email.subject} → ${to}${link ? `\n     ${link}` : ''}\n`);
+  }
+}
+
+class ResendEmailService extends BaseEmailService {
   private readonly client: Resend;
 
   constructor(apiKey: string) {
+    super();
     this.client = new Resend(apiKey);
   }
 
-  private async send(to: string, subject: string, html: string, text: string): Promise<void> {
-    const { error } = await this.client.emails.send({
+  protected async deliver(to: string, email: RenderedEmail): Promise<void> {
+    const { data, error } = await this.client.emails.send({
       from: env.EMAIL_FROM,
       to,
-      subject,
-      html,
-      text,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+      // Several emails invite a reply — an account freeze, a balance
+      // adjustment. Without this they go to noreply@ and vanish, which is the
+      // worst possible answer to "why has my money been frozen".
+      ...(env.EMAIL_REPLY_TO ? { replyTo: env.EMAIL_REPLY_TO } : {}),
     });
+
     if (error) {
-      // Surface it in logs but do not throw: a failed verification email must
-      // not roll back a successful registration. The user can hit "resend".
-      logger.error({ to, subject, error }, 'Failed to send email');
+      // Logged AND thrown. It used only to be logged, which meant the
+      // try/catch at every call site was decorative: no caller could tell a
+      // sent email from one Resend rejected. Callers already swallow this —
+      // they must, since they run behind money that has already moved — but
+      // now they swallow something real and can log it in context.
+      logger.error({ to, subject: email.subject, error }, 'Failed to send email');
+      throw new Error(`Email rejected by provider: ${error.message ?? 'unknown'}`);
     }
-  }
 
-  async sendVerification({ to, firstName, verifyUrl }: VerificationEmail): Promise<void> {
-    const t = verificationTemplate(firstName, verifyUrl);
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendPasswordReset({ to, firstName, resetUrl }: PasswordResetEmail): Promise<void> {
-    const t = passwordResetTemplate(firstName, resetUrl);
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendDuplicateSignupNotice({
-    to,
-    firstName,
-    loginUrl,
-    resetUrl,
-  }: DuplicateSignupEmail): Promise<void> {
-    const t = duplicateSignupTemplate(firstName, loginUrl, resetUrl);
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendKycDecided({
-    to,
-    firstName,
-    approved,
-    reason,
-    adoptedName,
-    url,
-  }: KycDecidedEmail): Promise<void> {
-    const t = kycDecidedTemplate(firstName, approved, url, reason, adoptedName);
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendDepositCredited({
-    to,
-    firstName,
-    amountReceived,
-    amountCredited,
-    newBalance,
-    url,
-  }: DepositCreditedEmail): Promise<void> {
-    const t = depositCreditedTemplate(
-      firstName,
-      amountReceived,
-      amountCredited,
-      newBalance,
-      url,
-    );
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendInvestmentConfirmed({
-    to,
-    firstName,
-    propertyTitle,
-    amount,
-    annualReturn,
-    termMonths,
-    maturesOn,
-    url,
-  }: InvestmentConfirmedEmail): Promise<void> {
-    const t = investmentConfirmedTemplate(
-      firstName,
-      propertyTitle,
-      amount,
-      annualReturn,
-      termMonths,
-      maturesOn,
-      url,
-    );
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendPayoutAccountChanged({
-    to,
-    firstName,
-    bankName,
-    accountNumberMasked,
-    accountName,
-    url,
-  }: PayoutAccountChangedEmail): Promise<void> {
-    const t = payoutAccountChangedTemplate(
-      firstName,
-      bankName,
-      accountNumberMasked,
-      accountName,
-      url,
-    );
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendWithdrawalRequested({
-    to,
-    firstName,
-    amount,
-    fee,
-    bankName,
-    accountNumberMasked,
-    url,
-  }: WithdrawalRequestedEmail): Promise<void> {
-    const t = withdrawalRequestedTemplate(
-      firstName,
-      amount,
-      fee,
-      bankName,
-      accountNumberMasked,
-      url,
-    );
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendWithdrawalSettled({ to, ...rest }: WithdrawalSettledEmail): Promise<void> {
-    const t = withdrawalSettledTemplate(rest);
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendReferralBonus({
-    to,
-    firstName,
-    inviteeName,
-    amount,
-    rate,
-    url,
-  }: ReferralBonusEmail): Promise<void> {
-    const t = referralBonusTemplate(firstName, inviteeName, amount, rate, url);
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendInvestmentMatured({
-    to,
-    firstName,
-    propertyTitle,
-    principal,
-    earned,
-    total,
-    url,
-  }: InvestmentMaturedEmail): Promise<void> {
-    const t = investmentMaturedTemplate(firstName, propertyTitle, principal, earned, total, url);
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendPasswordChanged({
-    to,
-    firstName,
-    otherSessionsEnded,
-    resetUrl,
-  }: PasswordChangedEmail): Promise<void> {
-    const t = passwordChangedTemplate(firstName, otherSessionsEnded, resetUrl);
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendAccountStatusChanged({
-    to,
-    firstName,
-    status,
-    reason,
-    url,
-  }: AccountStatusChangedEmail): Promise<void> {
-    const t = accountStatusChangedTemplate(firstName, status, reason, url);
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendKycResetRequired({
-    to,
-    firstName,
-    reason,
-    url,
-  }: KycResetRequiredEmail): Promise<void> {
-    const t = kycResetRequiredTemplate(firstName, reason, url);
-    await this.send(to, t.subject, t.html, t.text);
-  }
-
-  async sendBalanceAdjusted({ to, ...rest }: BalanceAdjustedEmail): Promise<void> {
-    const t = balanceAdjustedTemplate(rest);
-    await this.send(to, t.subject, t.html, t.text);
+    // The provider's id, so a "did you email me?" question is answerable.
+    logger.info({ to, subject: email.subject, messageId: data?.id }, 'Email sent');
   }
 }
 
@@ -326,4 +277,10 @@ export const emailService: EmailService = env.RESEND_API_KEY
 
 if (!env.RESEND_API_KEY) {
   logger.warn('RESEND_API_KEY is empty — using the console email driver.');
+}
+
+if (isProduction && !env.EMAIL_REPLY_TO) {
+  logger.warn(
+    'EMAIL_REPLY_TO is not set — emails inviting a reply will send people to noreply@.',
+  );
 }

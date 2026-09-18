@@ -27,6 +27,16 @@ const envSchema = z.object({
   // missing EMAIL_FROM should fail loudly at boot rather than silently send
   // from whatever address happened to be committed.
   EMAIL_FROM: z.string().min(1, 'EMAIL_FROM is required'),
+  /**
+   * Where replies go, and the address emails tell people to write to.
+   *
+   * Several emails say "reply to this email" — an account was frozen, money was
+   * taken out of a wallet — while the from-address is noreply@. Telling somebody
+   * their money is frozen and then swallowing their reply is the worst possible
+   * version of that message. Falls back to EMAIL_FROM so nothing breaks if it
+   * is unset, but it should be set.
+   */
+  EMAIL_REPLY_TO: z.string().default(''),
 
   // Empty string selects the stub identity driver (see services/kyc). Set once a
   // provider contract exists; until then submissions queue as PENDING in prod.
