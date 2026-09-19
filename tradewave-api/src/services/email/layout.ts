@@ -19,6 +19,23 @@
  * real client needs it.
  */
 
+import { env } from '../../config/env';
+
+/**
+ * The chevron mark, served from the web app's public directory.
+ *
+ * Derived from WEB_ORIGIN rather than configured separately, so it follows the
+ * site the same way every link in the body already does — and so there is no
+ * second thing to remember when the domain finally changes.
+ *
+ * Rendered at 2x and displayed at 28, because Outlook scales a 1x image badly.
+ * The background is baked to the canvas colour rather than left transparent: a
+ * client forcing dark mode would otherwise put a dark-green mark on a dark
+ * ground and lose it entirely, where a light chip stays legible.
+ */
+const MARK_URL = `${env.WEB_ORIGIN}/email/tradewave-mark.png`;
+const MARK_PX = 28;
+
 /**
  * Straight from tradewave-web/app/globals.css.
  *
@@ -211,10 +228,25 @@ export function renderHtml(message: Message): string {
 <!--[if mso]><table role="presentation" width="${WIDTH}" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:${WIDTH}px;margin:0 auto;">
 
-  <!-- Letterhead: the same wordmark and gold rule the PDFs use. Live text, not
-       an image — Gmail blocks remote images by default and strips inline SVG. -->
+  <!-- Letterhead: the mark and wordmark lockup the site header uses, over the
+       gold rule the PDFs use.
+
+       Deliberately split in two. Gmail blocks remote images by default and
+       strips inline SVG outright, so a logo that is ONLY an image is missing
+       for a large share of readers — on transactional mail about somebody's
+       money, that is the worst moment to look unfamiliar. The mark is the
+       image; the name stays live text. Images on, this is the site header.
+       Images off, it degrades to exactly the wordmark that shipped before.
+
+       alt is empty on purpose: the wordmark beside it already says Tradewave,
+       and alt text here would render the name twice whenever images are off. -->
   <tr><td style="padding:0 0 18px;">
-    <span style="font-family:${FONT};font-size:20px;font-weight:600;letter-spacing:-0.02em;color:${COLOURS.brand900};">Tradewave</span>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td valign="middle" style="padding-right:10px;line-height:0;">
+        <img src="${escapeUrl(MARK_URL)}" width="${MARK_PX}" height="${MARK_PX}" alt="" style="display:block;width:${MARK_PX}px;height:${MARK_PX}px;border:0;outline:none;text-decoration:none;">
+      </td>
+      <td valign="middle" style="font-family:${FONT};font-size:20px;font-weight:600;letter-spacing:-0.02em;color:${COLOURS.brand900};">Tradewave</td>
+    </tr></table>
     <div style="height:2px;width:36px;background:${COLOURS.gold500};font-size:0;line-height:0;margin-top:8px;">&nbsp;</div>
   </td></tr>
 
