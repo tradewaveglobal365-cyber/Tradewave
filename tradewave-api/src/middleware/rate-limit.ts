@@ -38,6 +38,18 @@ const byEmail = (req: Request): string => {
   return `ip:${ipKeyGenerator(req.ip ?? '0.0.0.0')}`;
 };
 
+/**
+ * Keys on the signed-in user, for limiters mounted after requireAuth.
+ *
+ * The IP fallback exists only for a request that somehow reaches one of these
+ * before auth has run, and it goes through ipKeyGenerator for exactly the
+ * reason byEmail does: keying on a raw IPv6 address hands every client in a /64
+ * its own bucket, so the limit is bypassed by picking a new address. Writing
+ * `req.ip` here directly is what express-rate-limit warns about at boot.
+ */
+const byUser = (req: Request): string =>
+  req.auth?.userId ?? `ip:${ipKeyGenerator(req.ip ?? '0.0.0.0')}`;
+
 export const registerLimiter = limiter({ windowMs: 60 * 60 * 1000, limit: 5 });
 
 export const loginLimiter = limiter({ windowMs: 15 * 60 * 1000, limit: 10 });
@@ -65,7 +77,7 @@ export const resendVerificationLimiter = limiter({
 export const kycSubmitLimiter = limiter({
   windowMs: 24 * 60 * 60 * 1000,
   limit: 5,
-  keyGenerator: (req) => req.auth?.userId ?? req.ip ?? 'unknown',
+  keyGenerator: byUser,
 });
 
 /**
@@ -101,7 +113,7 @@ export const depositWebhookLimiter = limiter({ windowMs: 60 * 1000, limit: 120 }
 export const withdrawalLimiter = limiter({
   windowMs: 60 * 60 * 1000,
   limit: 10,
-  keyGenerator: (req) => req.auth?.userId ?? req.ip ?? 'unknown',
+  keyGenerator: byUser,
 });
 
 /**
@@ -115,5 +127,5 @@ export const withdrawalLimiter = limiter({
 export const changePasswordLimiter = limiter({
   windowMs: 15 * 60 * 1000,
   limit: 5,
-  keyGenerator: (req) => req.auth?.userId ?? req.ip ?? 'unknown',
+  keyGenerator: byUser,
 });
