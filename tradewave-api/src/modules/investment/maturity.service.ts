@@ -48,7 +48,7 @@ export interface SettledMaturity {
  *
  * Exported so an admin can force a single one without waiting for the sweep.
  */
-export async function settleInvestment(investmentId: string): Promise<SettledMaturity | null> {
+async function settleOnly(investmentId: string): Promise<SettledMaturity | null> {
   try {
     return await prisma.$transaction(async (tx) => {
       // Claim it. The status filter is the lock: a concurrent caller matches
@@ -148,6 +148,21 @@ export async function settleInvestment(investmentId: string): Promise<SettledMat
 }
 
 /**
+ * Settles one matured investment and tells the investor.
+ *
+ * The notification lives HERE rather than in the callers because it did not,
+ * and the admin "settle now" button proved why: it called the settle step
+ * directly and skipped the email, so an investor whose maturity was forced
+ * through by hand was paid and never told, while the sweep's identical
+ * settlement emailed. One path, so a third caller cannot reintroduce the gap.
+ */
+export async function settleInvestment(investmentId: string): Promise<SettledMaturity | null> {
+  const settled = await settleOnly(investmentId);
+  if (settled) await notifyMatured(settled);
+  return settled;
+}
+
+/**
  * Settles everything that has come due.
  *
  * Opportunistic: runs off a portfolio read and off the admin queue, throttled,
@@ -178,7 +193,6 @@ export async function settleMaturedInvestments(now = Date.now()): Promise<number
       const result = await settleInvestment(row.id);
       if (!result) continue;
       settled += 1;
-      await notifyMatured(result);
     }
 
     if (settled > 0) logger.info({ settled }, 'Matured investments settled');

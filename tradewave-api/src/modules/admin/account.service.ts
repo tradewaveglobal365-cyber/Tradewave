@@ -164,6 +164,20 @@ export async function setWithdrawalBlock(params: {
     'Withdrawal block changed',
   );
 
+  // The reason is mandatory on this action and, until now, was written only to
+  // the audit log — so the person it was about learned of the block when a
+  // withdrawal failed, and never learned why. Telling them is the whole point
+  // of collecting a reason.
+  await notify(user, async () => {
+    await emailService.sendWithdrawalsBlocked({
+      to: user.email,
+      firstName: user.firstName,
+      blocked,
+      reason: params.reason,
+      url: `${env.WEB_ORIGIN}/wallet`,
+    });
+  });
+
   return { blocked };
 }
 

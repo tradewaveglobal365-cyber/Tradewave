@@ -101,6 +101,37 @@ function view(
 }
 
 /**
+ * The provider's word for "a human is looking at this". Matched exactly, and
+ * shared with the admin review queue, which filters on the same string.
+ */
+const REVIEW_STATUS = 'In Review';
+
+/**
+ * Tells somebody their check has gone to a person.
+ *
+ * Worth its own email because the alternative is silence of unknown length: an
+ * automated check answers in seconds, so a session that simply stops looks
+ * broken rather than busy, and the support question it generates is one we can
+ * pre-empt for the cost of one message.
+ */
+async function notifyInReview(userId: string): Promise<void> {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+    if (!user) return;
+    await emailService.sendKycInReview({
+      to: user.email,
+      firstName: user.firstName,
+      url: `${env.WEB_ORIGIN}/verify-identity`,
+    });
+  } catch (err) {
+    logger.error({ err, userId }, 'Could not send the identity in-review email');
+  }
+}
+
+/**
  * Applies a provider decision. The webhook, the reconciliation poll and the
  * return-from-provider page load all funnel through here — one state machine with
  * three triggers, because divergence is how double-apply bugs are born.
@@ -110,7 +141,7 @@ function view(
 export async function applyDecision(decision: KycDecision): Promise<void> {
   const row = await prisma.kycVerification.findUnique({
     where: { id: decision.reference },
-    select: { id: true, userId: true, status: true },
+    select: { id: true, userId: true, status: true, providerStatus: true },
   });
   // Unknown reference: a stale session, or not ours. Callers answer 200 anyway —
   // a 4xx would make the provider retry this forever.
@@ -124,10 +155,23 @@ export async function applyDecision(decision: KycDecision): Promise<void> {
   // someone is looking at their document or whether they never finished — and
   // what puts a session in front of an admin instead of nowhere.
   if (decision.providerStatus) {
-    await prisma.kycVerification.updateMany({
-      where: { id: row.id, status: 'PENDING' },
+    // The `not` clause is the idempotency gate, not decoration: the webhook,
+    // the poll and the return page all land here, and only the one that
+    // actually moves the value may email. The explicit null arm is required —
+    // SQL's `providerStatus != 'In Review'` is false for a NULL column, which
+    // would silently skip the very first transition.
+    const moved = await prisma.kycVerification.updateMany({
+      where: {
+        id: row.id,
+        status: 'PENDING',
+        OR: [{ providerStatus: null }, { providerStatus: { not: decision.providerStatus } }],
+      },
       data: { providerStatus: decision.providerStatus },
     });
+
+    if (moved.count === 1 && decision.providerStatus === REVIEW_STATUS) {
+      await notifyInReview(row.userId);
+    }
   }
 
   if (decision.status === 'PENDING') return;

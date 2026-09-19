@@ -143,11 +143,16 @@ export async function applyPayment(payment: ConfirmedPayment): Promise<void> {
     // Money has arrived and there is no honest number to credit it at. Recording
     // it PENDING loses nothing: the sweep completes it the moment a rate exists.
     // Dropping it here would mean a user's transfer simply vanished.
-    await recordUncreditable(payment, userId);
+    const firstSighting = await recordUncreditable(payment, userId);
     logger.error(
       { providerRef: payment.providerRef },
       'Deposit received with no USD/NGN rate set — held, not credited',
     );
+    // Silence here is indistinguishable from the transfer vanishing: the money
+    // has left their bank and nothing in the product acknowledges it. Sent once
+    // per receipt, on the first sighting only, so a replayed webhook or a sweep
+    // pass cannot tell somebody repeatedly that their money is stuck.
+    if (firstSighting) await notifyHeld(payment, userId);
     return;
   }
 
@@ -249,22 +254,59 @@ export async function applyPayment(payment: ConfirmedPayment): Promise<void> {
   }
 }
 
-/** Records a receipt we cannot yet convert, so the sweep can finish it later. */
-async function recordUncreditable(payment: ConfirmedPayment, userId: string): Promise<void> {
-  await prisma.deposit.upsert({
-    where: { providerRef: payment.providerRef },
-    create: {
-      userId,
-      provider: paymentProvider.name,
-      providerRef: payment.providerRef,
-      amountCents: 0n,
-      sourceAmountMinor: payment.amountMinor,
-      sourceCurrency: payment.currency,
-      status: 'PENDING',
-      paidAt: payment.paidAt ?? new Date(),
-    },
-    update: {},
-  });
+/**
+ * Records a receipt we cannot yet convert, so the sweep can finish it later.
+ *
+ * Returns true only the first time a given `providerRef` is seen. This used to
+ * be an upsert, which could not distinguish a new receipt from a replay — and
+ * the caller now emails on the strength of the answer, so "already held" has to
+ * be a fact rather than a guess. The unique constraint arbitrates, the same way
+ * the credit path lets it rather than checking first and racing.
+ */
+async function recordUncreditable(payment: ConfirmedPayment, userId: string): Promise<boolean> {
+  try {
+    await prisma.deposit.create({
+      data: {
+        userId,
+        provider: paymentProvider.name,
+        providerRef: payment.providerRef,
+        amountCents: 0n,
+        sourceAmountMinor: payment.amountMinor,
+        sourceCurrency: payment.currency,
+        status: 'PENDING',
+        paidAt: payment.paidAt ?? new Date(),
+      },
+    });
+    return true;
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return false;
+    throw err;
+  }
+}
+
+/**
+ * Tells somebody their transfer arrived but is waiting on a rate.
+ *
+ * Never allowed to throw, for the same reason the credited email is not: this
+ * runs under a webhook that must answer 200, and a provider retrying a receipt
+ * is a worse outcome than an email that did not arrive.
+ */
+async function notifyHeld(payment: ConfirmedPayment, userId: string): Promise<void> {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true },
+    });
+    if (!user) return;
+    await emailService.sendDepositHeld({
+      to: user.email,
+      firstName: user.firstName,
+      amountReceived: formatNgn(payment.amountMinor),
+      url: `${env.WEB_ORIGIN}/wallet`,
+    });
+  } catch (err) {
+    logger.error({ err, userId }, 'Could not send the deposit held email');
+  }
 }
 
 /**

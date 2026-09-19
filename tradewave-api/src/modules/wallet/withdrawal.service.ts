@@ -508,6 +508,27 @@ export async function approveWithdrawal(
     }
   }
 
+  // The investor was last told an ESTIMATE — the request email quotes a figure
+  // at whatever rate happened to be set that day. This is the first moment the
+  // naira amount and the rate are facts, pinned on the row above, so it is the
+  // first moment they can be told what is actually arriving.
+  //
+  // Not sent on the refused branch: returnMoney already emails there, and being
+  // told a transfer was approved seconds before being told it failed is worse
+  // than one clear message.
+  await notify(row.userId, async (user) => {
+    await emailService.sendWithdrawalApproved({
+      to: user.email,
+      firstName: user.firstName,
+      amount: formatUsd(row.amountCents),
+      naira: formatNgn(destinationAmountMinor),
+      rate: `${formatNgn(rate.minorPerUnit)} per $1`,
+      bankName: row.bankName,
+      accountNumberMasked: mask(row.accountNumber),
+      url: `${env.WEB_ORIGIN}/wallet`,
+    });
+  });
+
   return toView(await prisma.withdrawal.findUniqueOrThrow({ where: { id: withdrawalId } }));
 }
 

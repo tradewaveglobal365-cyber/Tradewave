@@ -14,12 +14,14 @@ import {
 } from '../../lib/errors';
 import { emailService } from '../../services/email';
 import { withMinimumDuration } from '../../lib/timing';
+import { describeDevice, describeWhen } from '../../lib/device';
 import {
   issueSession,
   revokeAllSessions,
   signAccessToken,
   type SessionContext,
 } from '../../services/token.service';
+import { formatBonusRate } from '../referral/referral.service';
 import type { LoginInput, RegisterInput, UpdateProfileInput } from './schemas';
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -100,12 +102,16 @@ export async function register(input: RegisterInput): Promise<void> {
       'PASSWORD_RESET',
       PASSWORD_RESET_TTL_MS,
     );
-    await emailService.sendDuplicateSignupNotice({
-      to: existing.email,
-      firstName: existing.firstName,
-      loginUrl: loginUrl(),
-      resetUrl: resetUrl(resetToken),
-    });
+    try {
+      await emailService.sendDuplicateSignupNotice({
+        to: existing.email,
+        firstName: existing.firstName,
+        loginUrl: loginUrl(),
+        resetUrl: resetUrl(resetToken),
+      });
+    } catch (err) {
+      logger.error({ err, userId: existing.id }, 'Could not send the duplicate signup email');
+    }
     return;
   }
 
@@ -144,11 +150,19 @@ export async function register(input: RegisterInput): Promise<void> {
     EMAIL_VERIFICATION_TTL_MS,
   );
 
-  await emailService.sendVerification({
-    to: user.email,
-    firstName: user.firstName,
-    verifyUrl: verifyUrl(token),
-  });
+  // Never allowed to throw. The user row is already committed, so a rejection
+  // that escaped here would 500 a registration that in fact succeeded — and the
+  // retry would find the address taken and send "you already have an account"
+  // instead of a link, stranding somebody who can neither verify nor re-register.
+  try {
+    await emailService.sendVerification({
+      to: user.email,
+      firstName: user.firstName,
+      verifyUrl: verifyUrl(token),
+    });
+  } catch (err) {
+    logger.error({ err, userId: user.id }, 'Could not send the verification email');
+  }
 }
 
 /**
@@ -190,6 +204,11 @@ export async function verifyEmail(rawToken: string, ctx: SessionContext) {
   }
   if (record.user.status === 'SUSPENDED') throw accountSuspended();
 
+  // Whether this is the moment the account became real, as opposed to a second
+  // unconsumed token being spent on an address already confirmed. Read before
+  // the update, which is what overwrites it.
+  const firstVerification = record.user.emailVerifiedAt === null;
+
   const [, user] = await prisma.$transaction([
     prisma.verificationToken.update({
       where: { id: record.id },
@@ -204,9 +223,63 @@ export async function verifyEmail(rawToken: string, ctx: SessionContext) {
     }),
   ]);
 
+  // After the commit, never inside it, and never allowed to throw — an email
+  // that fails must not undo a verification that succeeded.
+  if (firstVerification) await notifyVerified(user);
+
   // Verifying logs the user straight in — bouncing a freshly-verified user to a
   // login form is friction with no security benefit.
   return startSession(user, ctx);
+}
+
+/**
+ * The two emails a confirmed address earns: a welcome for the investor, and a
+ * note to whoever referred them.
+ *
+ * Both wait for verification rather than firing at signup, because an address
+ * nobody has confirmed is not yet a person — telling a referrer they have an
+ * invitee on the strength of an unverified signup is how a referral count gets
+ * gamed with addresses that do not exist.
+ */
+async function notifyVerified(user: {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  referredById: string | null;
+}): Promise<void> {
+  try {
+    await emailService.sendWelcome({
+      to: user.email,
+      firstName: user.firstName,
+      url: `${env.WEB_ORIGIN}/verify-identity`,
+    });
+  } catch (err) {
+    logger.error({ err, userId: user.id }, 'Could not send the welcome email');
+  }
+
+  if (!user.referredById) return;
+
+  try {
+    const referrer = await prisma.user.findUnique({
+      where: { id: user.referredById },
+      select: { email: true, firstName: true, status: true },
+    });
+    // A suspended referrer is skipped, the same rule the bonus itself follows.
+    if (!referrer || referrer.status === 'SUSPENDED') return;
+
+    await emailService.sendReferralSignup({
+      to: referrer.email,
+      firstName: referrer.firstName,
+      // Masked exactly as /referrals masks it: referring somebody is not a
+      // reason to be handed their full name.
+      inviteeName: `${user.firstName} ${user.lastName.charAt(0)}.`,
+      rate: formatBonusRate(),
+      url: `${env.WEB_ORIGIN}/referrals`,
+    });
+  } catch (err) {
+    logger.error({ err, referrerId: user.referredById }, 'Could not send the referral signup email');
+  }
 }
 
 export async function resendVerification(email: string): Promise<void> {
@@ -221,11 +294,17 @@ export async function resendVerification(email: string): Promise<void> {
       'EMAIL_VERIFICATION',
       EMAIL_VERIFICATION_TTL_MS,
     );
-    await emailService.sendVerification({
-      to: user.email,
-      firstName: user.firstName,
-      verifyUrl: verifyUrl(token),
-    });
+    // Swallowed for the same reason the unknown-address case returns silently:
+    // this endpoint must answer identically whichever address it is given.
+    try {
+      await emailService.sendVerification({
+        to: user.email,
+        firstName: user.firstName,
+        verifyUrl: verifyUrl(token),
+      });
+    } catch (err) {
+      logger.error({ err, userId: user.id }, 'Could not resend the verification email');
+    }
   });
 }
 
@@ -259,9 +338,31 @@ export async function login(input: LoginInput, ctx: SessionContext) {
       },
     });
     await recordAttempt(input.email, ctx, false);
-    if (shouldLock) throw accountLocked(new Date(Date.now() + LOCK_DURATION_MS));
+    if (shouldLock) {
+      const until = new Date(Date.now() + LOCK_DURATION_MS);
+      // The account owner is the one person who cannot see these attempts, and
+      // a lock they were not told about reads as the site being broken. Sent to
+      // a confirmed address only: an unverified one may not be theirs.
+      if (user.emailVerifiedAt) {
+        try {
+          await emailService.sendAccountLocked({
+            to: user.email,
+            firstName: user.firstName,
+            minutes: Math.round(LOCK_DURATION_MS / 60_000),
+            resetUrl: `${env.WEB_ORIGIN}/forgot-password`,
+          });
+        } catch (err) {
+          logger.error({ err, userId: user.id }, 'Could not send the account locked email');
+        }
+      }
+      throw accountLocked(until);
+    }
     throw invalidCredentials();
   }
+
+  // Asked BEFORE startSession, which is about to store a session carrying this
+  // very user-agent — after it, every device looks familiar to itself.
+  const unseen = await isUnseenDevice(user.id, ctx.userAgent);
 
   const fresh = await prisma.user.update({
     where: { id: user.id },
@@ -269,7 +370,50 @@ export async function login(input: LoginInput, ctx: SessionContext) {
   });
 
   await recordAttempt(input.email, ctx, true);
-  return startSession(fresh, ctx);
+  const session = await startSession(fresh, ctx);
+
+  if (unseen) {
+    try {
+      await emailService.sendNewDeviceSignIn({
+        to: fresh.email,
+        firstName: fresh.firstName,
+        device: describeDevice(ctx.userAgent),
+        when: describeWhen(new Date()),
+        resetUrl: `${env.WEB_ORIGIN}/forgot-password`,
+      });
+    } catch (err) {
+      logger.error({ err, userId: fresh.id }, 'Could not send the new device email');
+    }
+  }
+
+  return session;
+}
+
+/**
+ * Whether this user-agent has ever signed this account in before.
+ *
+ * Revoked and expired sessions still count: revokeAllSessions only stamps
+ * revokedAt, so the row survives as history, and a device is no less familiar
+ * for having been signed out of.
+ *
+ * Two deliberate silences. A request with no user-agent tells us nothing, and a
+ * guess either way is worse than nothing. An account with no sessions at all is
+ * signing in for the very first time — everything is new, and "we noticed a new
+ * sign-in" moments after signing up teaches people to ignore the warning.
+ */
+async function isUnseenDevice(userId: string, userAgent?: string): Promise<boolean> {
+  if (!userAgent) return false;
+  try {
+    const [everSignedIn, thisDevice] = await Promise.all([
+      prisma.session.findFirst({ where: { userId }, select: { id: true } }),
+      prisma.session.findFirst({ where: { userId, userAgent }, select: { id: true } }),
+    ]);
+    return everSignedIn !== null && thisDevice === null;
+  } catch (err) {
+    // A lookup failure must never be the reason a correct password is refused.
+    logger.warn({ err, userId }, 'Could not check whether this device is known');
+    return false;
+  }
 }
 
 async function recordAttempt(email: string, ctx: SessionContext, success: boolean): Promise<void> {
@@ -305,11 +449,18 @@ export async function forgotPassword(email: string): Promise<void> {
     if (!user || user.status === 'SUSPENDED') return;
 
     const token = await createVerificationToken(user.id, 'PASSWORD_RESET', PASSWORD_RESET_TTL_MS);
-    await emailService.sendPasswordReset({
-      to: user.email,
-      firstName: user.firstName,
-      resetUrl: resetUrl(token),
-    });
+    // Must not throw: an error here escapes as a 500 for addresses that exist
+    // while unknown ones still return 200, which is exactly the account oracle
+    // the minimum-duration floor above exists to close.
+    try {
+      await emailService.sendPasswordReset({
+        to: user.email,
+        firstName: user.firstName,
+        resetUrl: resetUrl(token),
+      });
+    } catch (err) {
+      logger.error({ err, userId: user.id }, 'Could not send the password reset email');
+    }
   });
 }
 
@@ -414,7 +565,7 @@ export async function resetPassword(rawToken: string, newPassword: string): Prom
 
   const passwordHash = await hashPassword(newPassword);
 
-  await prisma.$transaction([
+  const [, , revoked] = await prisma.$transaction([
     prisma.verificationToken.update({
       where: { id: record.id },
       data: { consumedAt: new Date() },
@@ -443,6 +594,23 @@ export async function resetPassword(rawToken: string, newPassword: string): Prom
       data: { consumedAt: new Date() },
     }),
   ]);
+
+  const sessionsEnded = revoked.count;
+
+  // The in-app password change has always emailed; completing a reset did not,
+  // which is backwards — a reset is the path an attacker with inbox access
+  // takes, and it silently ends every session the real owner had. If this was
+  // not them, this message is the only thing that tells them so.
+  try {
+    await emailService.sendPasswordChanged({
+      to: record.user.email,
+      firstName: record.user.firstName,
+      otherSessionsEnded: sessionsEnded,
+      resetUrl: `${env.WEB_ORIGIN}/forgot-password`,
+    });
+  } catch (err) {
+    logger.error({ err, userId: record.userId }, 'Could not send the password reset confirmation');
+  }
 }
 
 export async function getUserById(userId: string): Promise<User> {
