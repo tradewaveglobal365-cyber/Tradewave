@@ -15,10 +15,11 @@ export function migrateTestDatabase(): void {
 
 export async function resetDatabase(): Promise<void> {
   // Order matters only without CASCADE; RESTART IDENTITY keeps runs comparable.
-  // FxRate is listed explicitly: it has no foreign key to User, so CASCADE does
-  // not reach it and a rate set by one test would silently apply to the next.
+  // FxRate and ScheduledJob are listed explicitly: neither has a foreign key to
+  // User, so CASCADE does not reach them — a rate, or a job's lastRunAt, set by
+  // one test would silently apply to the next.
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "FxRate", "KycVerification", "LoginAttempt", "VerificationToken", "Session", "User" RESTART IDENTITY CASCADE',
+    'TRUNCATE TABLE "ScheduledJob", "FxRate", "KycVerification", "LoginAttempt", "VerificationToken", "Session", "User" RESTART IDENTITY CASCADE',
   );
 }
 

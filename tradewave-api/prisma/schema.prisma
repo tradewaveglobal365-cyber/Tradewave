@@ -147,6 +147,12 @@ model User {
   lockedUntil      DateTime?
   lastLoginAt      DateTime?
 
+  /// The last period a monthly statement was emailed for, as "YYYY-MM". A
+  /// string rather than a timestamp because the question the job asks is
+  /// "have they had August?", not "when did we last send?" — and a string
+  /// compares exactly, with no timezone to get wrong.
+  lastStatementPeriod String?
+
   sessions       Session[]
   tokens         VerificationToken[]
   wallet         Wallet?
@@ -246,8 +252,34 @@ model KycVerification {
   lastPolledAt DateTime?
   pollCount    Int       @default(0)
 
+  /// Stamped when the "you did not finish verifying" nudge goes out. One per
+  /// attempt, never a second — an unfinished check is a reminder, not a dunning
+  /// campaign.
+  abandonedNoticeSentAt DateTime?
+
   @@index([userId, status])
   @@index([documentHash])
+}
+
+/// One row per recurring job, and the thing that stops two API instances
+/// running the same sweep at the same moment.
+///
+/// A job claims its slot with a conditional updateMany — the same "let Postgres
+/// arbitrate" trick the wallet, investment and withdrawal paths already use —
+/// so the claim and the check cannot race. A crashed run releases when
+/// lockedUntil passes rather than wedging the job forever.
+///
+/// The lock protects against CONCURRENCY only. It does not stop a second tick
+/// from repeating work a minute later, so every job that sends email also
+/// carries its own at-most-once marker on the row it acts on.
+model ScheduledJob {
+  name        String    @id
+  lastRunAt   DateTime?
+  lockedUntil DateTime?
+  /// Which instance holds it, for telling a stuck lock from a busy one.
+  lockedBy    String?
+  lastError   String?
+  runCount    Int       @default(0)
 }
 
 model LoginAttempt {
@@ -318,6 +350,11 @@ model Investment {
   status     InvestmentStatus @default(ACTIVE)
   investedAt DateTime         @default(now())
   maturesAt  DateTime
+
+  /// Stamped when the "matures in a week" notice goes out, so a second tick
+  /// cannot send it twice. Nullable-timestamp-as-idempotency-gate, the same
+  /// shape as kycResetAt and destinationChangedAt.
+  maturityNoticeSentAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
