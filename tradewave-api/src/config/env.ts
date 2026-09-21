@@ -88,6 +88,22 @@ const envSchema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().default(''),
   SUPABASE_PROPERTY_BUCKET: z.string().default('property-images'),
 
+  /**
+   * Which local currency investors fund and are paid in.
+   *
+   * ONE switch, deliberately, because these four things must never disagree:
+   * the currency of the Klasha collection account, the quote currency of the
+   * FX rate that converts it to dollars, the bank list shown on the payout
+   * form, and the currency of the payout itself. Set them separately and the
+   * first mismatch is a deposit credited at the wrong rate — which is real
+   * money, and silent.
+   *
+   * NGN is the product. GHS exists because Klasha has not enabled Nigerian
+   * virtual accounts on this business yet, and a demonstrable Ghanaian flow is
+   * worth more than a broken Nigerian one while that is outstanding.
+   */
+  COLLECTION_CURRENCY: z.enum(['NGN', 'GHS']).default('NGN'),
+
   WEB_ORIGIN: z.string().url(),
   // Empty in development; ".tradewave.com" in production so the cookie is
   // shared between tradewave.com and api.tradewave.com.
@@ -189,6 +205,9 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+/** The ISO country Klasha expects beside COLLECTION_CURRENCY. */
+export const COLLECTION_COUNTRY = env.COLLECTION_CURRENCY === 'GHS' ? 'GH' : 'NG';
 
 export const isProduction = env.NODE_ENV === 'production';
 export const isTest = env.NODE_ENV === 'test';

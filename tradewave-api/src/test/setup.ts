@@ -12,6 +12,10 @@ process.env.WEB_ORIGIN = 'http://localhost:3000';
 process.env.RESEND_API_KEY = '';
 process.env.EMAIL_FROM = 'Tradewave <noreply@test.invalid>';
 process.env.COOKIE_DOMAIN = '';
+// Pinned for the same reason as the provider credentials below: the suite
+// asserts naira figures, and a developer running the app in GHS would otherwise
+// see two dozen failures that have nothing to do with what they changed.
+process.env.COLLECTION_CURRENCY = 'NGN';
 process.env.KYC_PROVIDER_API_KEY = '';
 process.env.KYC_ID_PEPPER = 'test-pepper-that-is-long-enough-32-chars';
 process.env.DIDIT_API_KEY = '';

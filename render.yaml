@@ -82,6 +82,11 @@ services:
       # Withdrawals only — it sits in the PATH of Klasha's payout endpoint.
       # Deliberately outside the all-or-nothing group: a deployment that only
       # takes deposits must not fail to boot because payouts were added.
+      # NGN or GHS. Drives the collection account currency, the FX quote
+      # currency, the payout bank list and the payout together.
+      - key: COLLECTION_CURRENCY
+        value: NGN
+
       - key: KLASHA_BUSINESS_ID
         sync: false
 

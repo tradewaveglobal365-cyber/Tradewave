@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { logger } from '../../lib/logger';
 import { depositsUnavailable } from '../../lib/errors';
-import { formatNgn, formatUsd, koboFromUsdCents, usdCentsFromKobo } from '../../lib/money';
+import { formatLocal, formatUsd, minorFromUsdCents, usdCentsFromMinor } from '../../lib/money';
 import { env } from '../../config/env';
 import { emailService } from '../../services/email';
 import { paymentProvider } from '../../services/payments';
@@ -58,7 +58,7 @@ export async function getDepositAccount(userId: string): Promise<DepositAccountV
     currency: account.currency,
     rateMinorPerUnit: rate ? rate.minorPerUnit.toString() : null,
     exampleKoboForHundredUsd: rate
-      ? koboFromUsdCents(10_000n, rate.minorPerUnit).toString()
+      ? minorFromUsdCents(10_000n, rate.minorPerUnit).toString()
       : null,
   };
 }
@@ -156,7 +156,7 @@ export async function applyPayment(payment: ConfirmedPayment): Promise<void> {
     return;
   }
 
-  const amountCents = usdCentsFromKobo(payment.amountMinor, rate.minorPerUnit);
+  const amountCents = usdCentsFromMinor(payment.amountMinor, rate.minorPerUnit);
   if (amountCents <= 0n) {
     logger.warn({ providerRef: payment.providerRef }, 'Deposit too small to credit a cent');
     return;
@@ -243,7 +243,7 @@ export async function applyPayment(payment: ConfirmedPayment): Promise<void> {
       await emailService.sendDepositCredited({
         to: user.email,
         firstName: user.firstName,
-        amountReceived: formatNgn(payment.amountMinor),
+        amountReceived: formatLocal(payment.amountMinor),
         amountCredited: formatUsd(amountCents),
         newBalance: formatUsd(balanceAfter),
         url: `${env.WEB_ORIGIN}/wallet`,
@@ -301,7 +301,7 @@ async function notifyHeld(payment: ConfirmedPayment, userId: string): Promise<vo
     await emailService.sendDepositHeld({
       to: user.email,
       firstName: user.firstName,
-      amountReceived: formatNgn(payment.amountMinor),
+      amountReceived: formatLocal(payment.amountMinor),
       url: `${env.WEB_ORIGIN}/wallet`,
     });
   } catch (err) {

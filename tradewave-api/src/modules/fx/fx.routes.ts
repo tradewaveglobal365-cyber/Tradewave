@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { env } from '../../config/env';
 import { z } from 'zod';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import { validateBody } from '../../middleware/validate';
@@ -27,7 +28,7 @@ fxRouter.get('/rate', requireAuth, async (_req: Request, res: Response) => {
   const rate = await getCurrentRate();
   res.json({
     baseCurrency: 'USD',
-    quoteCurrency: 'NGN',
+    quoteCurrency: env.COLLECTION_CURRENCY,
     minorPerUnit: rate ? rate.minorPerUnit.toString() : null,
     effectiveAt: rate?.effectiveAt ?? null,
   });
@@ -56,7 +57,7 @@ fxRouter.put(
       });
       res.status(201).json({
         baseCurrency: 'USD',
-        quoteCurrency: 'NGN',
+        quoteCurrency: env.COLLECTION_CURRENCY,
         minorPerUnit: rate.minorPerUnit.toString(),
         effectiveAt: rate.effectiveAt,
       });

@@ -1,4 +1,31 @@
 import { encryptedBody } from '../../lib/klasha-crypto';
+import { env } from '../../config/env';
+
+/**
+ * Pulls the account out of whatever shape Klasha answered with.
+ *
+ * Their virtual-account endpoints are not consistent with the rest of their
+ * API, and not consistent with each other: create returns the account object
+ * BARE, requery returns a BARE ARRAY, and every other endpoint wraps its result
+ * in `{ data: ... }`. Reading `body.data` — which is what the rest of this
+ * driver correctly does — therefore yields undefined on both, which made
+ * findAccount always answer "no account" and made a successful create look like
+ * a failure with no account number.
+ *
+ * Accepts all four shapes rather than picking one, because the far end is free
+ * to change its mind and a deposit account is not worth another outage.
+ */
+function pickAccount(body: unknown): KlashaVirtualAccount | undefined {
+  const unwrap = (v: unknown): unknown =>
+    v && typeof v === 'object' && 'data' in v ? (v as { data: unknown }).data : v;
+
+  const value = unwrap(body);
+  const candidate = Array.isArray(value) ? value[0] : value;
+
+  return candidate && typeof candidate === 'object' && 'accountNumber' in candidate
+    ? (candidate as KlashaVirtualAccount)
+    : undefined;
+}
 import { logger } from '../../lib/logger';
 import type {
   Bank,
@@ -225,28 +252,25 @@ export class KlashaPaymentProvider implements PaymentProvider {
       firstName: input.firstName,
       lastName: input.lastName,
       email: input.email,
-      currency: 'NGN',
+      currency: env.COLLECTION_CURRENCY,
     };
 
-    const body = await this.request<{ data?: KlashaVirtualAccount }>(
-      '/wallet/virtual/v3/business/create/account',
-      {
-        method: 'POST',
-        body: JSON.stringify(encryptedBody(payload, this.encryptionKey)),
-      },
-    );
+    const body = await this.request<unknown>('/wallet/virtual/v3/business/create/account', {
+      method: 'POST',
+      body: JSON.stringify(encryptedBody(payload, this.encryptionKey)),
+    });
 
-    const account = this.toAccount(body.data);
+    const account = this.toAccount(pickAccount(body));
     if (!account) throw new Error('Klasha created an account with no account number');
     return account;
   }
 
   private async findAccount(email: string): Promise<DepositAccountDetails | null> {
     try {
-      const body = await this.request<{ data?: KlashaVirtualAccount }>(
+      const body = await this.request<unknown>(
         `/wallet/virtual/v2/account/${encodeURIComponent(email)}`,
       );
-      return this.toAccount(body.data);
+      return this.toAccount(pickAccount(body));
     } catch (err) {
       // A miss is the expected answer for a first-time user, and Klasha reports
       // it as an error status rather than an empty body. Swallowed so the caller

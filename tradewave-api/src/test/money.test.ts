@@ -6,8 +6,8 @@ import {
   formatUsd,
   centsToDollarString,
   dollarsToCents,
-  koboFromUsdCents,
-  usdCentsFromKobo,
+  minorFromUsdCents,
+  usdCentsFromMinor,
 } from '../lib/money';
 import { addMonths, computeAccrual } from '../modules/investment/accrual';
 
@@ -96,21 +96,21 @@ describe('naira conversion', () => {
   const RATE = 165_000n;
 
   it('credits the dollars a naira transfer is worth', () => {
-    expect(usdCentsFromKobo(165_000_000n, RATE)).toBe(100_000n);
+    expect(usdCentsFromMinor(165_000_000n, RATE)).toBe(100_000n);
   });
 
   it('quotes the naira needed to fund a dollar amount', () => {
-    expect(koboFromUsdCents(100_000n, RATE)).toBe(165_000_000n);
+    expect(minorFromUsdCents(100_000n, RATE)).toBe(165_000_000n);
   });
 
   it('truncates a partial cent rather than inventing one', () => {
     // A cent and a bit; the remainder stays in the spread, not in the balance.
-    expect(usdCentsFromKobo(165_099n, RATE)).toBe(100n);
+    expect(usdCentsFromMinor(165_099n, RATE)).toBe(100n);
   });
 
   it('refuses a zero or negative rate instead of dividing by it', () => {
-    expect(() => usdCentsFromKobo(1_000n, 0n)).toThrow();
-    expect(() => koboFromUsdCents(1_000n, -1n)).toThrow();
+    expect(() => usdCentsFromMinor(1_000n, 0n)).toThrow();
+    expect(() => minorFromUsdCents(1_000n, -1n)).toThrow();
   });
 });
 

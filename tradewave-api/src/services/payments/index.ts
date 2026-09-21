@@ -61,7 +61,7 @@ export class StubPaymentProvider implements PaymentProvider {
       accountName: `Tradewave / ${input.firstName} ${input.lastName}`,
       bankName: 'Stub Bank (test)',
       bankCode: '000',
-      currency: 'NGN',
+      currency: env.COLLECTION_CURRENCY,
     };
   }
 

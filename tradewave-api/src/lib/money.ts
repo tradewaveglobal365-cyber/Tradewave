@@ -1,3 +1,4 @@
+import { env } from '../config/env';
 /**
  * Money handling for Tradewave.
  *
@@ -108,37 +109,49 @@ export function formatAed(cents: bigint): string {
   return aedFormatter.format(Number(aedFilsFromCents(cents)) / 100);
 }
 
-const ngnFormatter = new Intl.NumberFormat('en-NG', {
-  style: 'currency',
-  currency: 'NGN',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
+const localFormatter = new Intl.NumberFormat(
+  env.COLLECTION_CURRENCY === 'GHS' ? 'en-GH' : 'en-NG',
+  {
+    style: 'currency',
+    currency: env.COLLECTION_CURRENCY,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  },
+);
 
-/** Naira, from kobo. Only ever a deposit figure — never a stored balance. */
-export function formatNgn(kobo: bigint): string {
-  return ngnFormatter.format(Number(kobo) / 100);
+/**
+ * The local currency being collected, from its minor unit.
+ *
+ * Only ever a deposit or payout figure — never a stored balance, which is
+ * always USD cents. Naira and cedis both divide into 100, so the arithmetic is
+ * identical and only the symbol changes.
+ */
+export function formatLocal(minor: bigint): string {
+  return localFormatter.format(Number(minor) / 100);
 }
 
 /**
- * Converts received naira into the dollars we credit.
+ * Converts received local currency into the dollars we credit.
  *
- * `koboPerUsd` is exactly that — kobo per one dollar, so ₦1,650.00/$ is
- * 165_000n. No extra scale factor: the kobo is already 1/165000th of a dollar
- * at current rates, which is finer than any rate anyone would publish.
+ * `minorPerUsd` is the minor unit per one dollar: ₦1,650.00/$ is 165_000n, and
+ * ₵10.50/$ is 1_050n. No extra scale factor — the minor unit is already finer
+ * than any rate anyone would publish.
+ *
+ * Named for the minor unit rather than the kobo because the same arithmetic
+ * serves cedis: both divide into 100, and the rate carries the currency.
  *
  * Truncates, so a fractional cent is never credited into existence. The
  * remainder is worth less than a cent and stays in the spread.
  */
-export function usdCentsFromKobo(kobo: bigint, koboPerUsd: bigint): bigint {
-  if (koboPerUsd <= 0n) throw new Error('usdCentsFromKobo: rate must be positive');
-  return (kobo * CENTS_PER_DOLLAR) / koboPerUsd;
+export function usdCentsFromMinor(minor: bigint, minorPerUsd: bigint): bigint {
+  if (minorPerUsd <= 0n) throw new Error('usdCentsFromMinor: rate must be positive');
+  return (minor * CENTS_PER_DOLLAR) / minorPerUsd;
 }
 
-/** The inverse, for quoting "send ₦X to fund $Y" before the transfer happens. */
-export function koboFromUsdCents(cents: bigint, koboPerUsd: bigint): bigint {
-  if (koboPerUsd <= 0n) throw new Error('koboFromUsdCents: rate must be positive');
-  return (cents * koboPerUsd) / CENTS_PER_DOLLAR;
+/** The inverse, for quoting "send X to fund $Y" before the transfer happens. */
+export function minorFromUsdCents(cents: bigint, minorPerUsd: bigint): bigint {
+  if (minorPerUsd <= 0n) throw new Error('minorFromUsdCents: rate must be positive');
+  return (cents * minorPerUsd) / CENTS_PER_DOLLAR;
 }
 
 /**

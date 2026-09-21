@@ -1,4 +1,5 @@
 import { prisma } from '../../lib/prisma';
+import { env } from '../../config/env';
 import { logger } from '../../lib/logger';
 
 /**
@@ -14,9 +15,20 @@ import { logger } from '../../lib/logger';
  * superseded but not quietly erased.
  */
 
-/** Sanity bounds, in kobo per dollar. */
-const MIN_RATE = 10_000n; // ₦100/$
-const MAX_RATE = 100_000_000n; // ₦1,000,000/$
+/**
+ * Sanity bounds, in the collected currency's MINOR unit per dollar.
+ *
+ * Per currency, because they are three orders of magnitude apart: ₦1,650/$ is
+ * 165_000 kobo, ₵11.82/$ is 1_182 pesewas. A single naira-shaped floor rejects
+ * every plausible cedi rate, and a floor low enough for cedis would wave
+ * through a naira rate with two digits missing.
+ */
+const BOUNDS = {
+  NGN: { min: 10_000n, max: 100_000_000n }, // ₦100/$ .. ₦1,000,000/$
+  GHS: { min: 100n, max: 1_000_000n }, //      ₵1/$ .. ₵10,000/$
+} as const;
+
+const { min: MIN_RATE, max: MAX_RATE } = BOUNDS[env.COLLECTION_CURRENCY];
 
 export interface FxRateView {
   /** Kobo per one dollar. ₦1,650.00/$ is 165_000. */
@@ -33,7 +45,7 @@ export interface FxRateView {
  */
 export async function getCurrentRate(): Promise<FxRateView | null> {
   const row = await prisma.fxRate.findFirst({
-    where: { baseCurrency: 'USD', quoteCurrency: 'NGN', effectiveAt: { lte: new Date() } },
+    where: { baseCurrency: 'USD', quoteCurrency: env.COLLECTION_CURRENCY, effectiveAt: { lte: new Date() } },
     orderBy: { effectiveAt: 'desc' },
     select: { minorPerUnit: true, effectiveAt: true },
   });
@@ -62,14 +74,16 @@ export async function setRate(params: {
   // error in someone's balance, and it would be found by the depositor first.
   if (minorPerUnit < MIN_RATE || minorPerUnit > MAX_RATE) {
     throw new InvalidRateError(
-      'Rate is outside the plausible range. Give it in kobo per dollar — ₦1,650.00 is 165000.',
+      env.COLLECTION_CURRENCY === 'GHS'
+        ? 'Rate is outside the plausible range. Give it in pesewas per dollar — ₵11.82/$ is 1182.'
+        : 'Rate is outside the plausible range. Give it in kobo per dollar — ₦1,650.00 is 165000.',
     );
   }
 
   const created = await prisma.fxRate.create({
     data: {
       baseCurrency: 'USD',
-      quoteCurrency: 'NGN',
+      quoteCurrency: env.COLLECTION_CURRENCY,
       minorPerUnit,
       midMinorPerUnit,
       setByUserId,
@@ -77,6 +91,9 @@ export async function setRate(params: {
     select: { minorPerUnit: true, effectiveAt: true },
   });
 
-  logger.info({ minorPerUnit: minorPerUnit.toString(), setByUserId }, 'USD/NGN rate set');
+  logger.info(
+    { minorPerUnit: minorPerUnit.toString(), quoteCurrency: env.COLLECTION_CURRENCY, setByUserId },
+    'FX rate set',
+  );
   return created;
 }
