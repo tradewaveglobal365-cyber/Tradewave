@@ -94,6 +94,8 @@ export interface AdminInvestorRow {
   kycStatus: string;
   emailVerified: boolean;
   balanceCents: string;
+  /** Referral earnings held pending verification. "0" once verified. */
+  lockedCents: string;
   investedCents: string;
   investmentCount: number;
   hasPayoutAccount: boolean;
@@ -139,6 +141,8 @@ export interface AdminInvestorDetail {
   referralCount: number;
 
   balanceCents: string;
+  /** Referral earnings held pending verification. "0" once verified. */
+  lockedCents: string;
   entries: {
     id: string;
     type: string;

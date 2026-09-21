@@ -235,15 +235,29 @@ export function kycDecidedTemplate(
   url: string,
   reason?: string,
   adoptedName?: string,
+  unlockedReferralBonus?: string,
 ): RenderedEmail {
   if (approved) {
     const blocks: Block[] = [
+      // Verifying no longer buys the ability to invest — that was never gated on
+      // it any more — so the email leads with the one thing it does buy, when
+      // there is one.
       { kind: 'pill', label: 'Verified', tone: 'gain' },
       {
         kind: 'text',
-        text: `You're verified, ${firstName}. You can now fund your wallet and invest.`,
+        text: unlockedReferralBonus
+          ? `You're verified, ${firstName}. Your ${unlockedReferralBonus} of referral earnings has been released and is available to invest or withdraw.`
+          : `You're verified, ${firstName}. Everything on your account is now unlocked, including any referral earnings you go on to make.`,
       },
     ];
+    if (unlockedReferralBonus) {
+      blocks.push({
+        kind: 'figure',
+        label: 'Referral earnings released',
+        value: unlockedReferralBonus,
+        tone: 'gain',
+      });
+    }
     if (adoptedName) {
       blocks.push({
         kind: 'text',
@@ -252,7 +266,9 @@ export function kycDecidedTemplate(
     }
     return render({
       subject: 'Your identity is verified',
-      preheader: 'You can now fund your wallet and invest.',
+      preheader: unlockedReferralBonus
+        ? `${unlockedReferralBonus} of referral earnings is now yours to use.`
+        : 'Everything on your account is unlocked.',
       heading: 'Your identity is verified',
       blocks,
       cta: { label: 'Go to your dashboard', url },
@@ -808,6 +824,7 @@ export function referralBonusTemplate(
   amount: string,
   rate: string,
   url: string,
+  locked = false,
 ): RenderedEmail {
   return render({
     subject: `You earned ${amount}`,
@@ -829,10 +846,14 @@ export function referralBonusTemplate(
       },
       {
         kind: 'text',
-        text: 'It is already in your wallet — nothing to claim. You can invest it or withdraw it like any other balance.',
+        text: locked
+          ? 'It is in your wallet already — nothing to claim. To invest it or withdraw it, verify your identity once; it takes about a minute and releases this and every bonus after it.'
+          : 'It is already in your wallet — nothing to claim. You can invest it or withdraw it like any other balance.',
       },
     ],
-    cta: { label: 'View your referrals', url },
+    cta: locked
+      ? { label: 'Verify and unlock it', url: url.replace(/\/referrals$/, '/verify-identity') }
+      : { label: 'View your referrals', url },
   });
 }
 

@@ -55,7 +55,7 @@ async function signUp(email: string) {
   await request(app)
     .post('/api/v1/auth/register')
     .set('Origin', ORIGIN)
-    .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD });
+    .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD, phone: '08030000000' });
   const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
   const agent = request.agent(app);
   const res = await agent.post('/api/v1/auth/verify-email').set('Origin', ORIGIN).send({ token });
@@ -414,7 +414,7 @@ describe('forcing re-verification', () => {
     expect(fresh.kycResetAt).not.toBeNull();
   });
 
-  it('blocks investing until they pass again', async () => {
+  it('does not stop them investing — a re-check is not a freeze', async () => {
     const { agent, userId } = await investor('cantinvest@example.com');
     const staff = await admin('staff15@example.com');
     await act(staff.agent, userId, 'kyc-reset', { reason: 'Document expired' }).expect(200);
@@ -437,11 +437,16 @@ describe('forcing re-verification', () => {
       },
     });
 
+    // This asserted a 403 while identity verification gated investing. It no
+    // longer does, and that is the right outcome here too: asking somebody to
+    // re-verify is not a reason to stop them using money they already hold.
+    // Staff who want to freeze an account have suspend, restrict and the
+    // withdrawal block, all of which say so plainly to the investor.
     const res = await agent
       .post('/api/v1/investments')
       .set('Origin', ORIGIN)
       .send({ propertyId: property.id, amountCents: String(dollarsToCents('1000')) });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(201);
   });
 
   /** Our decision must not spend the investor's own allowance. */
@@ -494,6 +499,40 @@ describe('adjusting a balance', () => {
     const entry = await prisma.ledgerEntry.findFirstOrThrow({ where: { type: 'ADJUSTMENT' } });
     expect(entry.amountCents).toBe(2_500n);
     expect(entry.description).toMatch(/Goodwill credit/);
+  });
+
+  it('claws back a locked bonus, clamping the lock instead of refusing', async () => {
+    // The one debit that must ALWAYS work. Everywhere else a debit refuses to
+    // reach into locked referral earnings; here it must, or a fraudulent bonus
+    // becomes the single thing staff cannot reverse. The lock follows the money
+    // down rather than blocking the write.
+    const { userId } = await investor('clawback@example.com', '0');
+    await prisma.wallet.update({
+      where: { userId },
+      data: { balanceCents: 2_000n, lockedCents: 2_000n },
+    });
+    const staff = await admin('staff-clawback@example.com');
+
+    await act(staff.agent, userId, 'adjust-balance', {
+      amountCents: '-1500',
+      reason: 'Reversing a referral bonus paid on a cancelled investment',
+    }).expect(200);
+
+    const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId } });
+    expect(wallet.balanceCents).toBe(500n);
+    expect(wallet.lockedCents).toBe(500n);
+
+    // One-way. The dollars the lock encumbered are gone, and re-locking a
+    // balance somebody may have committed elsewhere is a conversation, not a
+    // control.
+    await act(staff.agent, userId, 'adjust-balance', {
+      amountCents: '1500',
+      reason: 'Putting back what was reversed in error, as agreed with support',
+    }).expect(200);
+
+    const after = await prisma.wallet.findUniqueOrThrow({ where: { userId } });
+    expect(after.balanceCents).toBe(2_000n);
+    expect(after.lockedCents).toBe(500n);
   });
 
   it('debits', async () => {

@@ -32,7 +32,7 @@ async function createUser(email: string) {
   await request(app)
     .post('/api/v1/auth/register')
     .set('Origin', ORIGIN)
-    .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD });
+    .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD, phone: '08030000000' });
   const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
   const agent = request.agent(app);
   const res = await agent
@@ -127,8 +127,10 @@ describe('editing your name', () => {
       .send({ phone: '+234 801 234 5678' })
       .expect(200);
 
+    // Stored normalised, not as typed — the spacing the user happened to use is
+    // not a thing support should have to guess at later.
     const row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    expect(row.phone).toBe('+234 801 234 5678');
+    expect(row.phone).toBe('+2348012345678');
   });
 
   it('treats resubmitting the SAME name as no change', async () => {
@@ -144,7 +146,11 @@ describe('editing your name', () => {
       .expect(200);
   });
 
-  it('clears the phone when sent empty, and leaves it alone when absent', async () => {
+  it('leaves the phone alone when absent, and refuses to blank it', async () => {
+    // Blanking used to be allowed, via an empty string meaning "remove it". It
+    // is not any more: a phone number is required to register, so letting
+    // Settings clear one would leave an account in a state the signup form
+    // cannot produce, and us with no way to reach them about their money.
     const { agent, userId } = await createUser('clear@example.com');
     await agent
       .patch('/api/v1/auth/me')
@@ -156,9 +162,10 @@ describe('editing your name', () => {
     let row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
     expect(row.phone).toBe('+2348012345678');
 
-    await agent.patch('/api/v1/auth/me').set('Origin', ORIGIN).send({ phone: '' }).expect(200);
+    const res = await agent.patch('/api/v1/auth/me').set('Origin', ORIGIN).send({ phone: '' });
+    expect(res.status).toBe(422);
     row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-    expect(row.phone).toBeNull();
+    expect(row.phone).toBe('+2348012345678');
   });
 
   it('rejects a name with characters a document would never carry', async () => {

@@ -40,7 +40,7 @@ function mask(accountNumber: string): string {
 }
 
 export async function listBanks(): Promise<Bank[]> {
-  return paymentProvider.listBanks('NGN');
+  return paymentProvider.listBanks(env.COLLECTION_CURRENCY);
 }
 
 export async function getPayoutAccount(userId: string): Promise<PayoutAccountView | null> {
@@ -60,8 +60,19 @@ export async function getPayoutAccount(userId: string): Promise<PayoutAccountVie
 /**
  * Sets or replaces the account, refusing one that does not name the investor.
  *
- * The caller has already passed requireKyc, so the user has a verified name to
- * check against — that is why the gate is there, rather than for consistency.
+ * ── What the name being checked actually is ───────────────────────────────
+ * For a VERIFIED investor it came off the document the provider read, and this
+ * is a genuine identity check. For an unverified one it is what they typed at
+ * signup — which would be worthless on its own, since they could type anything.
+ * What gives it force is that saving an account FREEZES that name: isNameEditable
+ * refuses further edits once a PayoutAccount row exists. So the sequence that
+ * would otherwise work — resolve a stranger's account, rename yourself to match
+ * it, withdraw there — is closed at the second step.
+ *
+ * The check is therefore "the destination names whoever this account has always
+ * claimed to be", which is weaker than a verified identity and much stronger
+ * than nothing. Say that in the copy rather than claiming a verification that
+ * may not have happened.
  */
 export async function setPayoutAccount(
   userId: string,
@@ -69,11 +80,12 @@ export async function setPayoutAccount(
 ): Promise<PayoutAccountView> {
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { firstName: true, lastName: true },
+    select: { firstName: true, lastName: true, kycStatus: true },
   });
-  const verifiedName = `${user.firstName} ${user.lastName}`;
+  const accountHolderName = `${user.firstName} ${user.lastName}`;
+  const verified = user.kycStatus === 'VERIFIED';
 
-  const banks = await paymentProvider.listBanks('NGN');
+  const banks = await paymentProvider.listBanks(env.COLLECTION_CURRENCY);
   const bank = banks.find((b) => b.code === input.bankCode);
   // Checked against the provider's own list rather than trusted from the form:
   // a code we invent is a payout that fails long after the user has gone.
@@ -94,17 +106,18 @@ export async function setPayoutAccount(
     });
 
   const nameToCheck = resolved ?? input.accountName;
-  const result = namesMatch(verifiedName, nameToCheck);
+  const result = namesMatch(accountHolderName, nameToCheck);
 
   if (!result.matches) {
     logger.warn(
       { userId, nameResolved: resolved !== null, matched: result.matched },
-      'Payout account refused: name does not match verified identity',
+      'Payout account refused: name does not match the account holder',
     );
+    const whose = verified ? 'your verified identity' : 'the name on your account';
     throw validationFailed({
       accountName: resolved
-        ? `This account belongs to ${resolved}, which does not match your verified identity (${verifiedName}). Money can only be paid to an account in your own name.`
-        : `This does not match your verified identity (${verifiedName}). Money can only be paid to an account in your own name — contact support if the account is genuinely yours.`,
+        ? `This account belongs to ${resolved}, which does not match ${whose} (${accountHolderName}). Money can only be paid to an account in your own name.`
+        : `This does not match ${whose} (${accountHolderName}). Money can only be paid to an account in your own name — contact support if the account is genuinely yours.`,
     });
   }
 

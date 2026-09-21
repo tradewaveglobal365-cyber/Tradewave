@@ -43,7 +43,7 @@ export default async function SettingsPage() {
         <Card
           title="Identity verification"
           icon={<BadgeCheck className="size-4" />}
-          description="Required before you can invest."
+          description="Optional. It unlocks your referral earnings."
         >
           <StatusRow
             done={user.emailVerified}
@@ -74,7 +74,7 @@ export default async function SettingsPage() {
                     ? 'Verify your identity'
                     : 'Try verifying again'}
               </Link>{' '}
-              to unlock investing.
+              to unlock your referral earnings.
             </p>
           ) : null}
         </Card>
@@ -109,9 +109,7 @@ export default async function SettingsPage() {
                     Add a payout account
                   </p>
                   <p className="mt-0.5 text-[0.75rem] text-muted-foreground">
-                    {user.kycStatus === 'VERIFIED'
-                      ? 'Takes about a minute.'
-                      : 'Available once your identity is verified.'}
+                    Takes about a minute.
                   </p>
                 </>
               )}

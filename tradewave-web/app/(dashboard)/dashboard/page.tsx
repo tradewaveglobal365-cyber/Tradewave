@@ -23,7 +23,10 @@ export default async function DashboardPage() {
   ]);
   if (!user) redirect('/login?next=/dashboard');
 
-  const balanceCents = wallet?.balanceCents ?? '0';
+  // The checklist step is "can you actually invest yet", so it asks about money
+  // that can be spent — a wallet holding nothing but a locked referral bonus has
+  // not been funded in the sense the step means.
+  const availableCents = wallet?.availableCents ?? '0';
   const hasHoldings = (portfolio?.holdingCount ?? 0) > 0;
 
   return (
@@ -56,7 +59,7 @@ export default async function DashboardPage() {
 
       <SetupChecklist
               user={user}
-              hasBalance={Number(balanceCents) > 0}
+              hasBalance={Number(availableCents) > 0}
               hasPayoutAccount={payoutAccount !== null}
             />
 

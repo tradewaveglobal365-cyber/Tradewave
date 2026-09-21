@@ -193,9 +193,12 @@ export async function setWithdrawalBlock(params: {
  * document was rejected when it was not is a lie that generates a support
  * ticket.
  *
- * EXPIRED also keeps canEditName permissive, which matters — a forced redo is
- * very often BECAUSE the name is wrong, and a locked name would make it
- * impossible to fix.
+ * EXPIRED also keeps the KYC half of the name lock permissive, which matters —
+ * a forced redo is very often BECAUSE the name is wrong. Note it is only half:
+ * an investor who has already set a payout account stays locked regardless, and
+ * fixing their name is a support job. That is the intended order, since the
+ * whole reason the payout half exists is that a name must not be edited to
+ * match an account after the fact.
  *
  * kycResetAt is stamped so the attempt caps in kyc.service count only what the
  * investor has tried SINCE this moment. Otherwise our decision would quietly
@@ -216,6 +219,13 @@ export async function forceKycReverification(params: {
     throw badRequest('That investor has not verified their identity yet.');
   }
 
+  // Referral earnings already released are NOT re-locked.
+  //
+  // Deliberate. The release happened, the dollars are mixed into a balance that
+  // may already be invested, and clawing back an encumbrance on money somebody
+  // was told was theirs is a support conversation rather than a control. Staff
+  // who need to stop this person spending have setWithdrawalBlock and RESTRICTED,
+  // both of which say what they do.
   await prisma.user.update({
     where: { id: user.id },
     data: { kycStatus: 'EXPIRED', kycVerifiedAt: null, kycResetAt: new Date() },
@@ -311,30 +321,52 @@ export async function adjustBalance(params: {
   const credit = params.amountCents > 0n;
 
   const balanceAfter = await prisma.$transaction(async (tx) => {
-    let updated;
-    try {
-      updated = await tx.wallet.update({
-        where: credit
-          ? { id: wallet.id }
-          : // The guard: a debit only matches when the money is actually there.
-            { id: wallet.id, balanceCents: { gte: -params.amountCents } },
-        data: { balanceCents: { increment: params.amountCents } },
-      });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
-        throw insufficientFunds(
-          'That debit is more than the investor holds. A balance cannot go negative.',
-        );
-      }
-      throw err;
+    /**
+     * Guarded on the FULL balance, deliberately — not the spendable one.
+     *
+     * Everywhere else a debit refuses to reach into locked referral earnings.
+     * Here it must: an admin clawing back a bonus that should never have been
+     * paid is the one operation that has to work regardless of an encumbrance
+     * WE placed on it. Refusing would make a fraudulent referral the single
+     * thing staff cannot reverse.
+     *
+     * So the lock follows the money down instead. LEAST clamps rather than
+     * refuses, and it clamps in the same statement as the debit so a referral
+     * bonus landing concurrently cannot slip between a read and a write.
+     * Postgres evaluates every SET expression against the OLD row, so
+     * "balanceCents" + amount on the right-hand side is the POST-debit balance.
+     *
+     * The clamp is one-way. Crediting the money back later does not restore the
+     * lock: the dollars it encumbered are gone, and re-locking a balance
+     * somebody may have already committed elsewhere is a support conversation,
+     * not a control.
+     *
+     * updatedAt is set by hand because Prisma applies @updatedAt client-side and
+     * a raw UPDATE would silently stop maintaining it. The column is `timestamp
+     * without time zone` holding UTC, so bare now() would drift it.
+     */
+    const rows = await tx.$queryRaw<{ balanceCents: bigint | string }[]>`
+      UPDATE "Wallet"
+      SET "balanceCents" = "balanceCents" + ${params.amountCents},
+          "lockedCents"  = LEAST("lockedCents", "balanceCents" + ${params.amountCents}),
+          "updatedAt"    = now() at time zone 'UTC'
+      WHERE id = ${wallet.id}::uuid
+        ${credit ? Prisma.empty : Prisma.sql`AND "balanceCents" >= ${-params.amountCents}`}
+      RETURNING "balanceCents"
+    `;
+    if (rows.length === 0) {
+      throw insufficientFunds(
+        'That debit is more than the investor holds. A balance cannot go negative.',
+      );
     }
+    const balanceCents = BigInt(rows[0]!.balanceCents);
 
     await tx.ledgerEntry.create({
       data: {
         walletId: wallet.id,
         type: 'ADJUSTMENT',
         amountCents: params.amountCents,
-        balanceAfterCents: updated.balanceCents,
+        balanceAfterCents: balanceCents,
         reference: `adj_${adjustmentId}`,
         // The reason reaches the investor's own transaction list, so it is
         // written to be read by them.
@@ -349,12 +381,12 @@ export async function adjustBalance(params: {
       reason: params.reason,
       detail: {
         amountCents: params.amountCents.toString(),
-        balanceAfterCents: updated.balanceCents.toString(),
+        balanceAfterCents: balanceCents.toString(),
         adjustmentId,
       },
     });
 
-    return updated.balanceCents;
+    return balanceCents;
   });
 
   logger.info(

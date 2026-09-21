@@ -36,6 +36,8 @@ export interface AdminInvestorRow {
   kycStatus: string;
   emailVerified: boolean;
   balanceCents: string;
+  /** Referral earnings held back pending verification. "0" once verified. */
+  lockedCents: string;
   /** Principal in ACTIVE investments. Matured money has already been returned. */
   investedCents: string;
   investmentCount: number;
@@ -97,7 +99,7 @@ export async function listInvestors(params: {
         kycStatus: true,
         emailVerifiedAt: true,
         createdAt: true,
-        wallet: { select: { balanceCents: true } },
+        wallet: { select: { balanceCents: true, lockedCents: true } },
         payoutAccount: { select: { id: true } },
         withdrawalsBlockedAt: true,
         _count: { select: { investments: true } },
@@ -129,6 +131,7 @@ export async function listInvestors(params: {
       kycStatus: u.kycStatus,
       emailVerified: u.emailVerifiedAt !== null,
       balanceCents: (u.wallet?.balanceCents ?? 0n).toString(),
+      lockedCents: (u.kycStatus === 'VERIFIED' ? 0n : (u.wallet?.lockedCents ?? 0n)).toString(),
       investedCents: (investedByUser.get(u.id) ?? 0n).toString(),
       investmentCount: u._count.investments,
       hasPayoutAccount: u.payoutAccount !== null,
@@ -173,6 +176,8 @@ export interface AdminInvestorDetail {
   referralCount: number;
 
   balanceCents: string;
+  /** Referral earnings held back pending verification. "0" once verified. */
+  lockedCents: string;
   entries: {
     id: string;
     type: string;
@@ -247,6 +252,7 @@ export async function getInvestor(userId: string): Promise<AdminInvestorDetail> 
       wallet: {
         select: {
           balanceCents: true,
+          lockedCents: true,
           entries: {
             orderBy: { createdAt: 'desc' },
             take: ENTRY_LIMIT,
@@ -331,6 +337,10 @@ export async function getInvestor(userId: string): Promise<AdminInvestorDetail> 
     referralCount: user._count.referrals,
 
     balanceCents: (user.wallet?.balanceCents ?? 0n).toString(),
+    lockedCents: (user.kycStatus === 'VERIFIED'
+      ? 0n
+      : (user.wallet?.lockedCents ?? 0n)
+    ).toString(),
     entries: (user.wallet?.entries ?? []).map((e) => ({
       id: e.id,
       type: e.type,

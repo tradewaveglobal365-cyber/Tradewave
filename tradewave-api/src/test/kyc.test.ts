@@ -41,7 +41,7 @@ async function createUser(email: string) {
   await request(app)
     .post('/api/v1/auth/register')
     .set('Origin', ORIGIN)
-    .send({ firstName: 'Test', lastName: 'Investor', email, password: PASSWORD });
+    .send({ firstName: 'Test', lastName: 'Investor', email, password: PASSWORD, phone: '08030000000' });
   const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
   const agent = request.agent(app);
   const res = await agent.post('/api/v1/auth/verify-email').set('Origin', ORIGIN).send({ token });
@@ -241,53 +241,94 @@ describe('a review nobody is working', () => {
   });
 });
 
-describe('the investment gate', () => {
-  it('blocks investing until identity is verified, and lifts without a new token', async () => {
+describe('investing while unverified', () => {
+  it('lets an unverified investor invest their own money', async () => {
+    // The gate this replaced returned 403 KYC_REQUIRED. Turning away somebody
+    // who cannot finish a document check costs us the investor, and the money
+    // is their own — it arrived by bank transfer the provider already saw.
     const { agent, userId } = await createUser('gate@example.com');
     await prisma.wallet.create({
       data: { userId, balanceCents: dollarsToCents('50000') },
     });
     const property = await createProperty();
-    const body = {
-      propertyId: property.id,
-      amountCents: dollarsToCents('10000').toString(),
-    };
-
-    const blocked = await agent
-      .post('/api/v1/investments')
-      .set('Origin', ORIGIN)
-      .send(body);
-    expect(blocked.status).toBe(403);
-    expect(blocked.body.error.code).toBe('KYC_REQUIRED');
-
-    await agent
-      .post('/api/v1/kyc/submit')
-      .set('Origin', ORIGIN)
-      .send({ consent: true });
-
-    // Same agent, same 15-minute access token. This is the whole reason the gate
-    // reads the database instead of the JWT: had kycStatus lived in the token,
-    // this request would still be a 403 and the user would be stuck staring at a
-    // "Verified" badge.
-    const allowed = await agent
-      .post('/api/v1/investments')
-      .set('Origin', ORIGIN)
-      .send(body);
-    expect(allowed.status).toBe(201);
-  });
-
-  it('reports KYC_PENDING separately, so the UI can say "under review"', async () => {
-    const { agent, userId } = await createUser('pending@example.com');
-    await prisma.user.update({ where: { id: userId }, data: { kycStatus: 'PENDING' } });
-    const property = await createProperty();
 
     const res = await agent.post('/api/v1/investments').set('Origin', ORIGIN).send({
       propertyId: property.id,
-      amountCents: dollarsToCents('1000').toString(),
+      amountCents: dollarsToCents('10000').toString(),
     });
 
-    expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe('KYC_PENDING');
+    expect(res.status).toBe(201);
+  });
+
+  it('still refuses to invest a referral bonus that has not been unlocked', async () => {
+    // What verification gates now is REFERRAL money, and it is enforced on the
+    // money rather than at the door: $100 of deposit plus $20 of locked bonus
+    // buys $100 of property and not a cent more.
+    const { agent, userId } = await createUser('locked@example.com');
+    await prisma.wallet.create({
+      data: {
+        userId,
+        balanceCents: dollarsToCents('12000'),
+        lockedCents: dollarsToCents('2000'),
+      },
+    });
+    const property = await createProperty();
+
+    const overreach = await agent.post('/api/v1/investments').set('Origin', ORIGIN).send({
+      propertyId: property.id,
+      amountCents: dollarsToCents('11000').toString(),
+    });
+    expect(overreach.status).toBe(422);
+    expect(overreach.body.error.code).toBe('INSUFFICIENT_FUNDS');
+    // The message has to name the locked money. "Not enough funds" while the
+    // wallet plainly shows $120 is the support ticket this feature generates.
+    expect(overreach.body.error.message).toMatch(/referral/i);
+
+    const allowed = await agent.post('/api/v1/investments').set('Origin', ORIGIN).send({
+      propertyId: property.id,
+      amountCents: dollarsToCents('10000').toString(),
+    });
+    expect(allowed.status).toBe(201);
+
+    const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId } });
+    expect(wallet.balanceCents).toBe(dollarsToCents('2000'));
+    expect(wallet.lockedCents).toBe(dollarsToCents('2000'));
+  });
+
+  it('releases the lock when the identity check passes, writing no ledger row', async () => {
+    const { agent, userId } = await createUser('release@example.com');
+    await prisma.wallet.create({
+      data: {
+        userId,
+        balanceCents: dollarsToCents('2000'),
+        lockedCents: dollarsToCents('2000'),
+      },
+    });
+
+    // The stub driver verifies immediately outside production.
+    await agent.post('/api/v1/kyc/submit').set('Origin', ORIGIN).send({ consent: true });
+
+    const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId } });
+    expect(wallet.lockedCents).toBe(0n);
+    // No zero-amount "unlocked" entry: its reference would collide on a second
+    // verification after an admin reset, and it would render as a green $0.00
+    // on the statement. The release is reconstructible from kycVerifiedAt.
+    expect(await prisma.ledgerEntry.count({ where: { walletId: wallet.id } })).toBe(0);
+  });
+
+  it('leaves the lock in place when the check does not pass', async () => {
+    const { userId } = await createUser('rejected@example.com');
+    const wallet = await prisma.wallet.create({
+      data: {
+        userId,
+        balanceCents: dollarsToCents('2000'),
+        lockedCents: dollarsToCents('2000'),
+      },
+    });
+    await prisma.user.update({ where: { id: userId }, data: { kycStatus: 'REJECTED' } });
+
+    const after = await prisma.wallet.findUniqueOrThrow({ where: { id: wallet.id } });
+    expect(after.lockedCents).toBe(dollarsToCents('2000'));
   });
 
   it('leaves the portfolio and wallet readable while unverified', async () => {

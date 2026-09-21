@@ -36,7 +36,7 @@ async function createUser(email: string) {
   await request(app)
     .post('/api/v1/auth/register')
     .set('Origin', ORIGIN)
-    .send({ firstName: 'Ada', lastName: 'Okafor', email, password: PASSWORD });
+    .send({ firstName: 'Ada', lastName: 'Okafor', email, password: PASSWORD, phone: '08030000000' });
   const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
   const agent = request.agent(app);
   const res = await agent
@@ -96,11 +96,13 @@ async function payIn(email: string, amountMinor: bigint, providerRef: string) {
 }
 
 describe('reaching the deposit account', () => {
-  it('refuses an unverified user — we do not hold money for someone unidentified', async () => {
+  it('issues one to an unverified user', async () => {
+    // This refused a 403 until identity verification stopped being a condition
+    // of using the product. The deposit still arrives by bank transfer from an
+    // account in somebody's real name, which the provider sees before we do.
     const { agent } = await createUser('unverified@example.com');
     const res = await agent.get('/api/v1/wallet/deposit-account');
-    expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe('KYC_REQUIRED');
+    expect(res.status).toBe(200);
   });
 
   it('still lets an unverified user see their own empty wallet', async () => {

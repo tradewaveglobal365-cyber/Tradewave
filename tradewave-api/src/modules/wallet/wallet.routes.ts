@@ -2,7 +2,6 @@ import { Router, type Request, type Response } from 'express';
 import {
   requireActive,
   requireAuth,
-  requireKyc,
   requireWithdrawalsAllowed,
 } from '../../middleware/auth';
 import { logger } from '../../lib/logger';
@@ -49,16 +48,22 @@ walletRouter.get('/', requireAuth, async (req: Request, res: Response) => {
 /**
  * The user's naira account details.
  *
- * requireKyc, not merely requireAuth: this is the point at which we would start
- * holding someone's money, and holding money for a person we cannot identify is
- * the thing identity verification exists to prevent. It is also the first route
- * in the codebase where requireKyc guards something a user can actually reach.
+ * This used to require a passed identity check, on the reasoning that holding
+ * money for a person we cannot identify is the thing verification exists to
+ * prevent. The product decision went the other way: an investor who cannot
+ * finish a document check is still an investor, and the deposit arrives by bank
+ * transfer that Klasha itself has already seen, from an account in somebody's
+ * real name.
+ *
+ * ⚠️ Whether Klasha's own terms permit issuing a dedicated collection account to
+ * an unverified customer is THEIR question, not ours, and it was open when this
+ * gate came off. If the answer is no, putting requireKyc back here is a one-line
+ * change that leaves the rest of the open-door work intact.
  */
 walletRouter.get(
   '/deposit-account',
   requireAuth,
   requireActive,
-  requireKyc,
   depositAccountLimiter,
   async (req: Request, res: Response) => {
     if (!req.auth) throw unauthorized();
@@ -133,15 +138,18 @@ walletRouter.get('/payout-account', requireAuth, async (req: Request, res: Respo
 /**
  * Set or replace the account money will be paid to.
  *
- * requireKyc is load-bearing rather than conventional: the account name is
- * checked against the VERIFIED identity, so without a passed check there is
- * nothing to check against.
+ * No identity gate, but the name check that gate existed to feed is still here
+ * and is now the control on its own: setPayoutAccount refuses an account that
+ * does not name the investor, and saving one FREEZES the profile name (see
+ * isNameEditable). Those two together are what stop the obvious attack — resolve
+ * a stranger's account, rename yourself to match it, withdraw there. With a
+ * passed check the name came off a document; without one it is self-asserted but
+ * fixed from the first payout account onward, which is the property that matters.
  */
 walletRouter.put(
   '/payout-account',
   requireAuth,
   requireActive,
-  requireKyc,
   validateBody(setPayoutAccountSchema),
   async (req: Request, res: Response) => {
     if (!req.auth) throw unauthorized();
@@ -165,9 +173,11 @@ walletRouter.get('/withdrawals', requireAuth, async (req: Request, res: Response
 /**
  * Ask for money to be sent out.
  *
- * requireKyc for the same reason the payout account needs it: we only ever pay
- * an account that matches a verified identity, and an unverified user has no
- * such account to pay.
+ * Open to unverified investors: it is their own money, and holding it hostage to
+ * a document check is the frustration this whole change exists to remove. The
+ * money that is NOT theirs to take yet — a referral bonus paid before they
+ * verified — is held back inside requestWithdrawal by debitSpendable rather than
+ * by refusing the request outright.
  *
  * POST rather than PUT — PUT is missing from the CORS methods allowlist in
  * app.ts and only works today because the browser goes through the Next.js
@@ -178,7 +188,6 @@ walletRouter.post(
   requireAuth,
   requireActive,
   requireWithdrawalsAllowed,
-  requireKyc,
   withdrawalLimiter,
   validateBody(requestWithdrawalSchema),
   async (req: Request, res: Response) => {

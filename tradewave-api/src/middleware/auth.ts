@@ -129,6 +129,21 @@ export async function requireWithdrawalsAllowed(
 /**
  * Requires a passed identity check.
  *
+ * ⚠️ CURRENTLY WIRED TO NOTHING, on purpose.
+ *
+ * It used to guard investing, the deposit account, the payout account and
+ * withdrawals. All four came off when identity verification stopped being a
+ * condition of using the product: an investor who cannot finish a document
+ * check is still an investor, and what verification gates now is referral
+ * earnings, enforced on the money itself in wallet.service.debitSpendable
+ * rather than at a door.
+ *
+ * Kept rather than deleted because one of those four may have to come back
+ * quickly: whether Klasha's terms allow issuing a collection account to an
+ * unverified customer was still open when the gates came off. Restoring it is
+ * then one line in wallet.routes rather than a middleware to rebuild. If that
+ * question resolves in our favour, delete this and kycPending with it.
+ *
  * Reads the database rather than req.auth, unlike requireActive. kycStatus cannot
  * live in the access token: tokens last 15 minutes (ACCESS_TOKEN_TTL_SECONDS) and
  * a provider decision arrives by webhook, server-side, with no way to reissue the

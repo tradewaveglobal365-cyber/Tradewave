@@ -40,6 +40,7 @@ async function createVerifiedUser(email: string, referralCode?: string) {
       email,
       password: PASSWORD,
       ...(referralCode ? { referralCode } : {}),
+      phone: '08030000000',
     });
 
   const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
@@ -94,6 +95,7 @@ describe('referral capture at signup', () => {
         email: 'noref@example.com',
         password: PASSWORD,
         referralCode: 'ZZZZZZZZ',
+        phone: '08030000000',
       });
 
     expect(res.status).toBe(201);
@@ -111,6 +113,7 @@ describe('referral capture at signup', () => {
         email: 'bad@example.com',
         password: PASSWORD,
         referralCode: 'SHORT',
+        phone: '08030000000',
       });
 
     expect(res.status).toBe(422);
@@ -148,6 +151,7 @@ describe('referral endpoints', () => {
       email: 'pending-invitee@example.com',
       password: PASSWORD,
       referralCode: user.referralCode,
+      phone: '08030000000',
     });
 
     const res = await agent.get('/api/v1/referrals/me');
@@ -232,7 +236,7 @@ describe('referral earnings', () => {
     await request(app)
       .post('/api/v1/auth/register')
       .set('Origin', ORIGIN)
-      .send({ firstName: 'Ada', lastName: 'Invitee', email, password: PASSWORD });
+      .send({ firstName: 'Ada', lastName: 'Invitee', email, password: PASSWORD, phone: '08030000000' });
     const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
     const agent = request.agent(app);
     const res = await agent
@@ -257,7 +261,7 @@ describe('referral earnings', () => {
     await request(app)
       .post('/api/v1/auth/register')
       .set('Origin', ORIGIN)
-      .send({ firstName: 'Joshua', lastName: 'Referrer', email, password: PASSWORD });
+      .send({ firstName: 'Joshua', lastName: 'Referrer', email, password: PASSWORD, phone: '08030000000' });
     const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
     const agent = request.agent(app);
     const res = await agent
@@ -281,6 +285,75 @@ describe('referral earnings', () => {
     const wallet = await prisma.wallet.findUnique({ where: { userId } });
     return wallet?.balanceCents ?? 0n;
   }
+
+  async function lockOf(userId: string) {
+    const wallet = await prisma.wallet.findUnique({ where: { userId } });
+    return wallet?.lockedCents ?? 0n;
+  }
+
+  it('locks the bonus when the referrer has not verified', async () => {
+    // referrer() leaves them email-verified but never KYC'd, which is what most
+    // referrers now are. The money is theirs and visible; it is just not
+    // spendable until we know who we paid.
+    const boss = await referrer('locked@example.com');
+    const invitee = await investorWithFunds('lockedinvitee@example.com', boss.userId);
+    const p = await property();
+
+    await invest(invitee.agent, p.id, '200000').expect(201);
+
+    expect(await balanceOf(boss.userId)).toBe(2_000n);
+    expect(await lockOf(boss.userId)).toBe(2_000n);
+  });
+
+  it('does not lock it for a referrer who has already verified', async () => {
+    const boss = await referrer('verified-boss@example.com');
+    await prisma.user.update({
+      where: { id: boss.userId },
+      data: { kycStatus: 'VERIFIED', kycVerifiedAt: new Date() },
+    });
+    const invitee = await investorWithFunds('freeinvitee@example.com', boss.userId);
+    const p = await property();
+
+    await invest(invitee.agent, p.id, '200000').expect(201);
+
+    expect(await balanceOf(boss.userId)).toBe(2_000n);
+    expect(await lockOf(boss.userId)).toBe(0n);
+  });
+
+  it('accumulates the lock across several unverified referrals', async () => {
+    const boss = await referrer('many@example.com');
+    const p = await property();
+
+    const first = await investorWithFunds('first@example.com', boss.userId);
+    await invest(first.agent, p.id, '200000').expect(201);
+    const second = await investorWithFunds('second@example.com', boss.userId);
+    await invest(second.agent, p.id, '300000').expect(201);
+
+    // $20 + $30.
+    expect(await balanceOf(boss.userId)).toBe(5_000n);
+    expect(await lockOf(boss.userId)).toBe(5_000n);
+  });
+
+  it('reports what is locked on the referrals summary', async () => {
+    const boss = await referrer('summary-lock@example.com');
+    const invitee = await investorWithFunds('summaryinvitee@example.com', boss.userId);
+    const p = await property();
+    await invest(invitee.agent, p.id, '200000').expect(201);
+
+    const res = await boss.agent.get('/api/v1/referrals/me').expect(200);
+    expect(res.body.earnedCents).toBe('2000');
+    expect(res.body.lockedCents).toBe('2000');
+
+    // Verifying reports it released even before the column is zeroed, because
+    // the lock binds on kycStatus rather than on the column alone.
+    await prisma.user.update({
+      where: { id: boss.userId },
+      data: { kycStatus: 'VERIFIED', kycVerifiedAt: new Date() },
+    });
+    const after = await boss.agent.get('/api/v1/referrals/me').expect(200);
+    expect(after.body.earnedCents).toBe('2000');
+    expect(after.body.lockedCents).toBe('0');
+  });
 
   it('pays the referrer 1% when their invitee first invests', async () => {
     const boss = await referrer('earner@example.com');

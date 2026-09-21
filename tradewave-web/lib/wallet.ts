@@ -14,10 +14,14 @@ export interface LedgerEntry {
 
 export interface WalletSummary {
   balanceCents: Cents;
+  /** Referral earnings held until identity is verified. "0" once verified. */
+  lockedCents: Cents;
+  /** balanceCents - lockedCents, computed by the API. Never subtract here. */
+  availableCents: Cents;
   entries: LedgerEntry[];
 }
 
-/** The naira account a user transfers into. Null until identity is verified. */
+/** The naira account a user transfers into. */
 export interface DepositAccount {
   accountNumber: string;
   accountName: string;
@@ -86,15 +90,25 @@ export async function getWallet(): Promise<WalletSummary | null> {
  */
 export type DepositAccountState =
   | { state: 'ok'; account: DepositAccount }
-  | { state: 'kyc_required' }
+  /** The account itself is frozen — RESTRICTED or SUSPENDED, not unverified. */
+  | { state: 'blocked'; message: string }
   | { state: 'unavailable'; message: string };
 
 export async function getDepositAccount(): Promise<DepositAccountState> {
   const result = await authedGetResult<DepositAccount>('/wallet/deposit-account');
   if (result.ok) return { state: 'ok', account: result.body };
 
-  // Only an explicit 403 means the identity check is what is missing.
-  if (result.status === 403) return { state: 'kyc_required' };
+  // A 403 no longer means "verify your identity" — that gate is gone. What is
+  // left on this route is requireActive, so a 403 here means the account is
+  // restricted or suspended, and the API's own sentence says which.
+  if (result.status === 403) {
+    return {
+      state: 'blocked',
+      message:
+        result.message ||
+        'Funding is unavailable on this account. Contact support if you think that is wrong.',
+    };
+  }
 
   return {
     state: 'unavailable',
@@ -195,6 +209,10 @@ export interface WithdrawalContext {
   minimumCents: Cents;
   feeCents: Cents;
   balanceCents: Cents;
+  /** Referral earnings held until identity is verified. */
+  lockedCents: Cents;
+  /** What may actually be withdrawn. The figure the form validates against. */
+  availableCents: Cents;
   window: WithdrawalWindow;
   payoutAccount: {
     bankName: string;

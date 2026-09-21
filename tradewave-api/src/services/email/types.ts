@@ -35,6 +35,13 @@ export interface KycDecidedEmail {
    * so the email can explain why their profile now reads differently.
    */
   adoptedName?: string | undefined;
+  /**
+   * Referral earnings this decision just made spendable, already formatted.
+   *
+   * Absent when nothing was held — which is most people, since it is only ever
+   * set for somebody who referred an investor before verifying themselves.
+   */
+  unlockedReferralBonus?: string | undefined;
   url: string;
 }
 
@@ -123,6 +130,14 @@ export interface ReferralBonusEmail {
   amount: string;
   /** The rate it was calculated at, e.g. "1%". */
   rate: string;
+  /**
+   * Whether the bonus landed encumbered, because the referrer has not verified.
+   *
+   * It changes the one sentence that matters. Telling somebody money is theirs
+   * to spend and then refusing the withdrawal is how an honest hold reads as a
+   * platform that has taken their money.
+   */
+  locked: boolean;
   url: string;
 }
 

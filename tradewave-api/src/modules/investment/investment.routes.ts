@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { requireActive, requireAuth, requireKyc } from '../../middleware/auth';
+import { requireActive, requireAuth } from '../../middleware/auth';
 import { validateBody } from '../../middleware/validate';
 import { unauthorized } from '../../lib/errors';
 import { createInvestment, getPortfolio } from './investment.service';
@@ -37,18 +37,21 @@ export const investmentActionRouter = Router();
 /**
  * Buys a fractional stake.
  *
- * Two independent gates. requireActive reads UserStatus (is the account usable at
- * all); requireKyc reads kycStatus (have we established who this person is). They
- * are deliberately separate fields — a user can be ACTIVE and un-verified, and one
- * enum cannot hold both. requireKyc also reads the database rather than the JWT,
- * because a 15-minute token would leave someone who just passed verification
- * blocked at the exact moment they try to act on it.
+ * requireActive only. Identity verification is deliberately NOT a gate here:
+ * turning away somebody who cannot finish a document check costs us the
+ * investor, and the money being invested is their own — it arrived through a
+ * bank transfer that the payment provider already saw.
+ *
+ * What verification still gates is REFERRAL earnings, and that is enforced
+ * where the money is rather than at the door: createInvestment debits through
+ * debitSpendable, which will not reach into a locked bonus. So an unverified
+ * investor can invest every dollar they deposited and none of what they were
+ * paid for inviting somebody.
  */
 investmentActionRouter.post(
   '/',
   requireAuth,
   requireActive,
-  requireKyc,
   validateBody(createInvestmentSchema),
   async (req: Request, res: Response) => {
     if (!req.auth) throw unauthorized();

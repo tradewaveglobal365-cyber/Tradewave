@@ -34,12 +34,10 @@ export function VerifyIdentityForm({
   const router = useRouter();
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Mirrors canEditName in tradewave-api/src/modules/auth/auth.service.ts. The
-  // API is the authority; this only decides whether to offer the link.
-  const nameEditable =
-    user.kycStatus === 'NOT_STARTED' ||
-    user.kycStatus === 'REJECTED' ||
-    user.kycStatus === 'EXPIRED';
+  // Sent by the API, which is the only place that can answer it: the rule now
+  // also depends on whether a payout account exists. This only decides whether
+  // to offer the "update it in Settings" link.
+  const nameEditable = user.nameEditable;
 
   const {
     register,

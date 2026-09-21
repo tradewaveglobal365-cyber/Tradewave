@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { getReferralList, getReferralSummary } from '@/lib/referrals';
 import { CopyLink } from '@/components/dashboard/copy-link';
 import { formatBps, formatUsd } from '@/lib/money';
@@ -13,6 +14,9 @@ const STATUS_LABEL: Record<string, { text: string; className: string }> = {
 
 export default async function ReferralsPage() {
   const [summary, list] = await Promise.all([getReferralSummary(), getReferralList()]);
+
+  // Decided by the API, which is the same place the debit guard reads it from.
+  const locked = (summary?.lockedCents ?? '0') !== '0';
 
   return (
     <div>
@@ -54,10 +58,27 @@ export default async function ReferralsPage() {
               {formatUsd(summary?.earnedCents ?? '0')}
             </p>
           </div>
-          <p className="max-w-xs text-[0.75rem] leading-relaxed text-muted-foreground">
-            Already in your wallet — this is money you have been paid, not a projection. It
-            shows in your transactions as a referral bonus.
-          </p>
+          {/* The unlocked copy promised money was spendable. Saying that to
+              somebody whose withdrawal is about to be refused is how an honest
+              hold reads as a platform taking their money, so the locked case
+              gets its own sentence and a way out of it. */}
+          {locked ? (
+            <p className="max-w-xs text-[0.75rem] leading-relaxed text-muted-foreground">
+              {formatUsd(summary?.lockedCents ?? '0')} of this is waiting on your identity
+              check. It is already yours and it is already in your wallet — verifying
+              takes about a minute and releases it, and everything you earn after that
+              is spendable straight away.{' '}
+              <Link href="/verify-identity" className="font-medium text-brand-700 underline">
+                Verify your identity
+              </Link>
+              .
+            </p>
+          ) : (
+            <p className="max-w-xs text-[0.75rem] leading-relaxed text-muted-foreground">
+              Already in your wallet — this is money you have been paid, not a projection. It
+              shows in your transactions as a referral bonus.
+            </p>
+          )}
         </div>
       </section>
 

@@ -56,7 +56,7 @@ export function SetupChecklist({
           ? "We're reviewing your details. We'll email you when it completes."
           : kyc === 'REJECTED'
             ? 'That document could not be verified. Try again.'
-            : 'Required before you can invest.',
+            : 'Optional — it unlocks your referral earnings.',
       icon: BadgeCheck,
       done: kyc === 'VERIFIED',
       href: '/verify-identity',
@@ -95,7 +95,7 @@ export function SetupChecklist({
         <div>
           <h2 className="text-[1rem] font-semibold text-foreground">Finish setting up</h2>
           <p className="mt-0.5 text-[0.8125rem] text-muted-foreground">
-            A few steps before you can invest.
+            A few steps to get set up.
           </p>
         </div>
         <div className="flex items-center gap-2.5">

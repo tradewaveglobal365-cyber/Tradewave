@@ -43,6 +43,7 @@ async function createFundedUser(email: string, balance: string) {
     lastName: 'Investor',
     email,
     password: PASSWORD,
+    phone: '08030000000',
   });
   const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
   const agent = request.agent(app);
@@ -212,6 +213,7 @@ describe('creating an investment', () => {
       lastName: 'Verified',
       email: 'unverified@example.com',
       password: PASSWORD,
+      phone: '08030000000',
     });
     const property = await createProperty();
 

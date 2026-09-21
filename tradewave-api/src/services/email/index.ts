@@ -90,7 +90,14 @@ abstract class BaseEmailService implements EmailService {
   async sendKycDecided(i: KycDecidedEmail): Promise<void> {
     await this.deliver(
       i.to,
-      t.kycDecidedTemplate(i.firstName, i.approved, i.url, i.reason, i.adoptedName),
+      t.kycDecidedTemplate(
+        i.firstName,
+        i.approved,
+        i.url,
+        i.reason,
+        i.adoptedName,
+        i.unlockedReferralBonus,
+      ),
     );
   }
   async sendKycInReview(i: KycInReviewEmail): Promise<void> {
@@ -210,7 +217,7 @@ abstract class BaseEmailService implements EmailService {
   async sendReferralBonus(i: ReferralBonusEmail): Promise<void> {
     await this.deliver(
       i.to,
-      t.referralBonusTemplate(i.firstName, i.inviteeName, i.amount, i.rate, i.url),
+      t.referralBonusTemplate(i.firstName, i.inviteeName, i.amount, i.rate, i.url, i.locked),
     );
   }
   async sendMonthlyStatement(i: MonthlyStatementEmail): Promise<void> {

@@ -1,11 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { AlertCircle, ArrowUpRight, Clock, Receipt, ShieldCheck } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Clock, Lock, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState, PageHeader } from '@/components/dashboard/page-header';
 import { AddFundsPanel } from '@/components/wallet/add-funds-panel';
 import { getDepositAccount, getWallet, getWithdrawalContext } from '@/lib/wallet';
-import { getCurrentUser } from '@/lib/session';
 import { formatAed, formatNgn, formatUsd } from '@/lib/money';
 
 export const metadata: Metadata = { title: 'Wallet · Tradewave' };
@@ -21,22 +20,24 @@ const ENTRY_LABELS: Record<string, string> = {
 };
 
 export default async function WalletPage() {
-  // The user is read here so the funding panel can be decided from the identity
-  // status itself rather than inferred from a failed request. Fetched alongside
-  // the wallet so an unverified user still gets their balance rather than a
-  // blank page.
-  const [user, wallet, deposit, withdrawals] = await Promise.all([
-    getCurrentUser(),
+  // The user used to be read here so the funding panel could be decided from
+  // kycStatus rather than inferred from a failed request. Identity no longer
+  // decides anything on this screen, and the locked figure comes off the wallet
+  // itself, so there is nothing left for it to answer.
+  const [wallet, deposit, withdrawals] = await Promise.all([
     getWallet(),
     getDepositAccount(),
     getWithdrawalContext(),
   ]);
   const balanceCents = wallet?.balanceCents ?? '0';
+  const lockedCents = wallet?.lockedCents ?? '0';
+  const availableCents = wallet?.availableCents ?? '0';
   const entries = wallet?.entries ?? [];
 
-  // kycStatus is the authority on this, not the deposit-account read. A
-  // verified investor must never be told to verify because Klasha timed out.
-  const verified = user?.kycStatus === 'VERIFIED';
+  // Referral earnings this investor has been paid but cannot spend yet. The
+  // API decides this — it is the same figure the debit guard enforces, and two
+  // derivations of it would eventually disagree.
+  const hasLocked = lockedCents !== '0';
   const live = withdrawals?.live ?? null;
 
   return (
@@ -47,7 +48,9 @@ export default async function WalletPage() {
       />
 
       <section className="rounded-xl border border-hairline bg-surface p-6">
-        <p className="text-[0.8125rem] font-medium text-muted-foreground">Available balance</p>
+        <p className="text-[0.8125rem] font-medium text-muted-foreground">
+          {hasLocked ? 'Total balance' : 'Available balance'}
+        </p>
         <p className="mt-1.5 text-[2rem] leading-none font-semibold tracking-[-0.02em] tabular-nums text-foreground">
           {formatUsd(balanceCents)}
         </p>
@@ -59,35 +62,47 @@ export default async function WalletPage() {
           {formatAed(balanceCents)} at the AED/USD peg
         </p>
 
+        {/* Shown only when there IS something held, so the ordinary wallet is
+            not cluttered by a permanent line reading "$0.00 locked". The figure
+            is named as theirs and the reason is stated in the same breath —
+            money you cannot see the reason for reads as money taken. */}
+        {hasLocked ? (
+          <div className="mt-4 rounded-lg border border-hairline bg-muted/40 p-3.5">
+            <div className="flex items-start gap-2.5">
+              <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="text-[0.8125rem] font-medium text-foreground">
+                  {formatUsd(availableCents)} available &middot; {formatUsd(lockedCents)} locked
+                </p>
+                <p className="mt-1 text-[0.8125rem] text-muted-foreground">
+                  Your referral earnings are yours, and they unlock the moment your
+                  identity is verified. Everything you have deposited can be invested
+                  or withdrawn as normal.
+                </p>
+                <Button asChild variant="outline" size="sm" className="mt-2.5 h-9">
+                  <Link href="/verify-identity">Verify and unlock</Link>
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div className="mt-5">
           {deposit.state === 'ok' ? (
             <AddFundsPanel account={deposit.account} />
-          ) : !verified ? (
-            <Panel
-              icon={<ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
-              title="Verify your identity to add funds"
-              body="We issue your naira account once your identity is confirmed. It takes about a minute — photograph an ID and take a selfie."
-            >
-              <Button asChild className="mt-3 h-11 md:h-10">
-                <Link href="/verify-identity">Verify identity</Link>
-              </Button>
-            </Panel>
           ) : (
-            // Verified, but we could not issue the account. Say that, rather
-            // than sending them back through a check they have already passed.
+            // Identity is no longer a reason to be here: the account is issued
+            // to anyone. So every remaining case is OUR problem, and the panel
+            // says so rather than handing the investor a task they cannot do.
             <Panel
               tone="warn"
               icon={<AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />}
               title="Funding is unavailable right now"
-              body={
-                deposit.state === 'unavailable'
-                  ? deposit.message
-                  : 'Please try again shortly.'
-              }
+              body={deposit.message}
             >
               <p className="mt-2 text-[0.75rem] text-muted-foreground">
-                Your identity is verified — there is nothing for you to do. This is on
-                our side and your account number will appear here once it is fixed.
+                There is nothing for you to do. Your account number will appear here
+                once this is fixed.
               </p>
             </Panel>
           )}
@@ -97,7 +112,7 @@ export default async function WalletPage() {
             here: it is a form with a confirmation step, and the funding panel
             above already owns this card. A link keeps both reachable without
             either one burying the other. */}
-        {verified && withdrawals ? (
+        {withdrawals ? (
           <div className="mt-4 border-t border-hairline pt-4">
             <Button asChild variant="outline" className="h-10 gap-1.5">
               <Link href="/wallet/withdraw">

@@ -4,6 +4,7 @@ import { env } from '../../config/env';
 import { hashIdentifier } from '../../lib/crypto';
 import { logger } from '../../lib/logger';
 import { tooManyRequests } from '../../lib/errors';
+import { formatUsd } from '../../lib/money';
 import { kycProvider } from '../../services/kyc';
 import { emailService } from '../../services/email';
 import type { KycDecision } from '../../services/kyc/types';
@@ -203,11 +204,18 @@ export async function applyDecision(decision: KycDecision): Promise<void> {
     }
   }
 
-  // Read before the write, so the notification can say whether the name moved.
+  // Read before the write, so the notification can say whether the name moved
+  // and how much referral money this decision just freed.
   const before = await prisma.user.findUnique({
     where: { id: row.userId },
-    select: { firstName: true, lastName: true, email: true },
+    select: {
+      firstName: true,
+      lastName: true,
+      email: true,
+      wallet: { select: { lockedCents: true } },
+    },
   });
+  const unlockedCents = before?.wallet?.lockedCents ?? 0n;
   const nameChanged =
     status === 'VERIFIED' &&
     Boolean(decision.firstName && decision.lastName) &&
@@ -258,6 +266,28 @@ export async function applyDecision(decision: KycDecision): Promise<void> {
           : {}),
       },
     });
+
+    // Release any referral bonus that was held back while we did not know who
+    // this was.
+    //
+    // Housekeeping, not the release itself: every spend guard already treats
+    // lockedCents as non-binding once kycStatus is VERIFIED, so the money is
+    // spendable the instant the row above commits whether or not this runs.
+    // Zeroing it keeps the wallet screen and the API payload honest, and means
+    // a bonus credited in the same instant as this decision cannot be stranded
+    // by whichever transaction happened to commit second.
+    //
+    // No ledger entry. A zero-amount row would need a unique reference that
+    // survives an admin-forced re-verification, would make an otherwise quiet
+    // month emit a statement, and would render as a green +$0.00 on the PDF.
+    // The release is already reconstructible from User.kycVerifiedAt, and the
+    // places a user actually looks are the wallet screen and the email below.
+    if (status === 'VERIFIED') {
+      await tx.wallet.updateMany({
+        where: { userId: row.userId, lockedCents: { gt: 0n } },
+        data: { lockedCents: 0n },
+      });
+    }
   });
 
   logger.info({ verificationId: row.id, status }, 'KYC decision applied');
@@ -284,6 +314,11 @@ export async function applyDecision(decision: KycDecision): Promise<void> {
           nameChanged && decision.firstName && decision.lastName
             ? `${decision.firstName} ${decision.lastName}`
             : undefined,
+        // The one concrete thing verifying just bought them. Omitted when
+        // nothing was held, so the email does not congratulate somebody on
+        // unlocking nothing.
+        unlockedReferralBonus:
+          status === 'VERIFIED' && unlockedCents > 0n ? formatUsd(unlockedCents) : undefined,
         url:
           status === 'VERIFIED'
             ? `${env.WEB_ORIGIN}/dashboard`

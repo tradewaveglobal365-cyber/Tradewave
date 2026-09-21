@@ -34,7 +34,7 @@ async function createUser(email: string) {
   await request(app)
     .post('/api/v1/auth/register')
     .set('Origin', ORIGIN)
-    .send({ firstName: 'Ada', lastName: 'Okafor', email, password: PASSWORD });
+    .send({ firstName: 'Ada', lastName: 'Okafor', email, password: PASSWORD, phone: '08030000000' });
   const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
   const agent = request.agent(app);
   const res = await agent

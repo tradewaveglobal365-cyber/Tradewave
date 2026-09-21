@@ -39,7 +39,7 @@ export default async function VerifyIdentityPage() {
         description={
           status === 'PENDING'
             ? 'Your details are with our verification partner.'
-            : 'Required before you can invest. Photograph an ID, take a selfie — about a minute.'
+            : 'Optional, and it unlocks your referral earnings. Photograph an ID, take a selfie — about a minute.'
         }
       />
 

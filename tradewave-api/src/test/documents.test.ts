@@ -44,7 +44,7 @@ async function investor(email: string, balance = '50000') {
   await request(app)
     .post('/api/v1/auth/register')
     .set('Origin', ORIGIN)
-    .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD });
+    .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD, phone: '08030000000' });
   const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
   const agent = request.agent(app);
   const res = await agent.post('/api/v1/auth/verify-email').set('Origin', ORIGIN).send({ token });
@@ -212,7 +212,7 @@ describe('the statement', () => {
     await request(app)
       .post('/api/v1/auth/register')
       .set('Origin', ORIGIN)
-      .send({ firstName: 'New', lastName: 'User', email: 'empty@example.com', password: PASSWORD });
+      .send({ firstName: 'New', lastName: 'User', email: 'empty@example.com', password: PASSWORD, phone: '08030000000' });
     const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
     const agent = request.agent(app);
     await agent.post('/api/v1/auth/verify-email').set('Origin', ORIGIN).send({ token });

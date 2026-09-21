@@ -38,12 +38,14 @@ export const signupSchema = z.object({
   lastName: name('Last name'),
   email,
   password,
+  // Required now. Shape only — the server normalises to E.164 and is the one
+  // that decides whether a number could be real, so duplicating that judgement
+  // here would only produce two answers to the same question.
   phone: z
-    .string()
+    .string({ error: 'Phone number is required' })
     .trim()
-    .regex(/^\+?[0-9\s\-()]{7,20}$/, 'Enter a valid phone number')
-    .optional()
-    .or(z.literal('')),
+    .min(1, 'Phone number is required')
+    .regex(/^\+?[0-9\s\-()]{7,20}$/, 'Enter a valid phone number'),
   referralCode: z.string().trim().toUpperCase().optional().or(z.literal('')),
 });
 
@@ -170,11 +172,13 @@ export const updateProfileSchema = z.object({
     .min(1, 'Last name is required')
     .max(50, 'Last name is too long')
     .regex(/^[\p{L}\p{M}'\- .]+$/u, 'Last name contains invalid characters'),
+  // Changeable, not clearable: it is required to register, so Settings must not
+  // be able to leave an account in a state the signup form cannot produce.
   phone: z
-    .string()
+    .string({ error: 'Phone number is required' })
     .trim()
-    .regex(/^\+?[0-9\s\-()]{7,20}$/, 'Enter a valid phone number')
-    .or(z.literal('')),
+    .min(1, 'Phone number is required')
+    .regex(/^\+?[0-9\s\-()]{7,20}$/, 'Enter a valid phone number'),
 });
 
 export type UpdateProfileValues = z.input<typeof updateProfileSchema>;

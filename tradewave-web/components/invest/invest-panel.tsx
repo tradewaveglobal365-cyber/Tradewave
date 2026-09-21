@@ -30,6 +30,11 @@ export function InvestPanel({
   walletBalanceCents = '0',
 }: {
   property: Property;
+  /**
+   * What can actually be SPENT, not the headline balance — locked referral
+   * earnings are in the latter and the API will refuse them. Passing the wrong
+   * one here makes the panel offer an amount the confirm step then rejects.
+   */
   walletBalanceCents?: string;
 }) {
   const router = useRouter();
@@ -96,14 +101,11 @@ export function InvestPanel({
       router.refresh();
     } catch (err) {
       if (err instanceof ApiError && err.code === 'INSUFFICIENT_FUNDS') {
-        setSubmitError('Your wallet balance is not enough. Fund your wallet and try again.');
-      } else if (err instanceof ApiError && err.code === 'KYC_REQUIRED') {
+        // The API's own sentence, not ours. It is the only one that knows
+        // whether this was a plain shortfall or a locked referral bonus, and it
+        // names the figure that can actually be invested.
         setSubmitError(
-          'Verify your identity before investing — you can do it from Settings in about a minute.',
-        );
-      } else if (err instanceof ApiError && err.code === 'KYC_PENDING') {
-        setSubmitError(
-          "We're still reviewing your identity check. You'll be able to invest as soon as it clears.",
+          err.message || 'Your wallet balance is not enough. Fund your wallet and try again.',
         );
       } else {
         setSubmitError(errorMessage(err));

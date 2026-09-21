@@ -10,7 +10,7 @@ import {
   Check,
   Clock,
   Landmark,
-  ShieldCheck,
+  Lock,
   Wallet,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -18,26 +18,29 @@ import { Input } from '@/components/ui/input';
 import { ApiError, apiFetch, errorMessage } from '@/lib/api';
 import { centsToNumber, formatNgn, formatUsd, parseDollarInput } from '@/lib/money';
 import type { Withdrawal, WithdrawalContext } from '@/lib/wallet';
-import type { PublicUser } from '@/lib/types';
 
 /**
  * Asking for money to be sent out.
  *
  * A ladder of early returns before the form, in the order the user hits them:
- * identity, then a destination, then the security hold, then whether one is
- * already running. Showing a form the API is certain to refuse would be worse
- * than explaining why it is not here yet — the same shape as the payout
- * account form, for the same reason.
+ * a destination, then the security hold, then whether one is already running.
+ * Showing a form the API is certain to refuse would be worse than explaining
+ * why it is not here yet — the same shape as the payout account form, for the
+ * same reason.
+ *
+ * Identity used to be the first rung and is not any more: an unverified
+ * investor may withdraw their own money. What they cannot withdraw is a
+ * referral bonus earned before verifying, and that is not a rung either — it is
+ * a cap on the AMOUNT, so it belongs beside the figure rather than in front of
+ * the form.
  *
  * The naira figure is an ESTIMATE everywhere in this component, and says so.
  * The rate is pinned when the transfer is actually sent, so a firm number here
  * would be a promise the system does not make.
  */
 export function WithdrawPanel({
-  user,
   context,
 }: {
-  user: PublicUser;
   /** Null when the read failed outright — not the same as having nothing. */
   context: WithdrawalContext | null;
 }) {
@@ -66,23 +69,9 @@ export function WithdrawPanel({
     );
   }
 
-  const verified = user.kycStatus === 'VERIFIED';
+  const hasLocked = context.lockedCents !== '0';
 
   // ── The ladder ─────────────────────────────────────────────────────────────
-
-  if (!verified) {
-    return (
-      <Notice
-        icon={<ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
-        title="Verify your identity first"
-        body="Money can only be sent to an account in your own name, so we need to know who you are before anything can leave your wallet."
-      >
-        <Button asChild className="mt-3 h-11 md:h-10">
-          <Link href="/verify-identity">Verify identity</Link>
-        </Button>
-      </Notice>
-    );
-  }
 
   if (!context.payoutAccount) {
     return (
@@ -132,7 +121,9 @@ export function WithdrawPanel({
 
   // ── The form ───────────────────────────────────────────────────────────────
 
-  const balance = centsToNumber(context.balanceCents);
+  // The spendable figure, not the headline one. Validating against the total
+  // would invite an amount the server is certain to refuse.
+  const balance = centsToNumber(context.availableCents);
   const minimum = centsToNumber(context.minimumCents);
   const fee = centsToNumber(context.feeCents);
   const rate = context.rateMinorPerUnit ? Number(context.rateMinorPerUnit) : null;
@@ -155,7 +146,7 @@ export function WithdrawPanel({
         : parsed < minimum
           ? `The minimum withdrawal is ${formatUsd(String(minimum))}`
           : parsed > balance
-            ? `That is more than your balance of ${formatUsd(context.balanceCents)}`
+            ? `That is more than the ${formatUsd(context.availableCents)} you can withdraw`
             : null;
 
   const canContinue = parsed !== null && amountError === null;
@@ -301,9 +292,25 @@ export function WithdrawPanel({
       ) : (
         <p className="mt-1 flex items-center gap-1.5 text-[0.75rem] text-muted-foreground">
           <Wallet className="size-3" />
-          {formatUsd(context.balanceCents)} available · {formatUsd(context.minimumCents)} minimum
+          {formatUsd(context.availableCents)} available · {formatUsd(context.minimumCents)} minimum
         </p>
       )}
+
+      {/* Beside the figure, not in front of the form. The difference between the
+          balance they can see and the amount they can take has to be explained
+          exactly where they notice it, or it reads as money quietly missing. */}
+      {hasLocked ? (
+        <p className="mt-2 flex items-start gap-1.5 text-[0.75rem] text-muted-foreground">
+          <Lock className="mt-px size-3 shrink-0" />
+          <span>
+            {formatUsd(context.lockedCents)} of your balance is referral earnings.{' '}
+            <Link href="/verify-identity" className="font-medium text-brand-700 underline">
+              Verify your identity
+            </Link>{' '}
+            to unlock it — it takes about a minute.
+          </span>
+        </p>
+      ) : null}
 
       {canContinue ? (
         <dl className="mt-4 overflow-hidden rounded-lg border border-hairline">

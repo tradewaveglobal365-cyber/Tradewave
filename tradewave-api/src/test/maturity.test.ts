@@ -46,7 +46,7 @@ async function investor(email: string, balance: string) {
   await request(app)
     .post('/api/v1/auth/register')
     .set('Origin', ORIGIN)
-    .send({ firstName: 'Test', lastName: 'Investor', email, password: PASSWORD });
+    .send({ firstName: 'Test', lastName: 'Investor', email, password: PASSWORD, phone: '08030000000' });
   const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
   const agent = request.agent(app);
   const res = await agent.post('/api/v1/auth/verify-email').set('Origin', ORIGIN).send({ token });

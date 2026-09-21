@@ -81,7 +81,7 @@ export function SignupForm() {
       lastName: values.lastName,
       email: values.email,
       password: values.password,
-      ...(values.phone ? { phone: values.phone } : {}),
+      phone: values.phone,
       ...(values.referralCode ? { referralCode: values.referralCode } : {}),
     };
 
@@ -180,14 +180,14 @@ export function SignupForm() {
         )}
       </Field>
 
-      <Field label="Phone" error={errors.phone?.message} hint="Optional">
+      <Field label="Phone" error={errors.phone?.message}>
         {(props) => (
           <Input
             {...props}
             {...register('phone')}
             type="tel"
             autoComplete="tel"
-            placeholder="+971 50 000 0000"
+            placeholder="0801 234 5678"
           />
         )}
       </Field>

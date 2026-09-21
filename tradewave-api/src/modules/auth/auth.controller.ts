@@ -9,7 +9,7 @@ import {
   signAccessToken,
 } from '../../services/token.service';
 import * as authService from './auth.service';
-import { toPublicUser } from './auth.service';
+import { isNameEditable, toPublicUser } from './auth.service';
 import type {
   ForgotPasswordInput,
   LoginInput,
@@ -39,7 +39,9 @@ export async function verifyEmail(req: Request, res: Response): Promise<void> {
   const { token } = req.body as { token: string };
   const result = await authService.verifyEmail(token, sessionContext(req));
   setAuthCookies(res, result.accessToken, result.refreshToken);
-  res.json({ user: toPublicUser(result.user) });
+  res.json({
+    user: toPublicUser(result.user, await isNameEditable(result.user.id, result.user.kycStatus)),
+  });
 }
 
 export async function resendVerification(req: Request, res: Response): Promise<void> {
@@ -50,7 +52,9 @@ export async function resendVerification(req: Request, res: Response): Promise<v
 export async function login(req: Request, res: Response): Promise<void> {
   const result = await authService.login(req.body as LoginInput, sessionContext(req));
   setAuthCookies(res, result.accessToken, result.refreshToken);
-  res.json({ user: toPublicUser(result.user) });
+  res.json({
+    user: toPublicUser(result.user, await isNameEditable(result.user.id, result.user.kycStatus)),
+  });
 }
 
 export async function refresh(req: Request, res: Response): Promise<void> {
@@ -78,7 +82,7 @@ export async function refresh(req: Request, res: Response): Promise<void> {
     sid: session.id,
   });
   setAuthCookies(res, accessToken, rawRefreshToken);
-  res.json({ user: toPublicUser(user) });
+  res.json({ user: toPublicUser(user, await isNameEditable(user.id, user.kycStatus)) });
 }
 
 export async function logout(req: Request, res: Response): Promise<void> {
@@ -133,7 +137,7 @@ export async function resetPassword(req: Request, res: Response): Promise<void> 
 export async function me(req: Request, res: Response): Promise<void> {
   if (!req.auth) throw unauthorized();
   const user = await authService.getUserById(req.auth.userId);
-  res.json({ user: toPublicUser(user) });
+  res.json({ user: toPublicUser(user, await isNameEditable(user.id, user.kycStatus)) });
 }
 
 /**

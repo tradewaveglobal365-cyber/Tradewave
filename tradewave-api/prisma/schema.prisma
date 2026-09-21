@@ -114,7 +114,7 @@ model User {
   firstName    String
   lastName     String
   phone        String?
-  country      String  @default("AE")
+  country      String  @default("NG")
 
   status          UserStatus @default(PENDING_VERIFICATION)
   role            Role       @default(USER)
@@ -371,6 +371,24 @@ model Wallet {
   // Cached balance. NEVER written outside the same transaction as its
   // LedgerEntry — a balance that has drifted from its history is unauditable.
   balanceCents BigInt @default(0)
+
+  /// How much of balanceCents is not spendable.
+  ///
+  /// An ENCUMBRANCE, not a second balance. balanceCents stays exactly the sum
+  /// of this wallet's LedgerEntry rows — the invariant five test files assert —
+  /// and availableCents (balanceCents - lockedCents) is derived on read and
+  /// never stored. Only referral bonuses paid to an unverified referrer raise
+  /// it, and verification drops it to zero, so it has no running total to drift.
+  ///
+  /// It binds only while the owner's kycStatus <> 'VERIFIED'. Every spend guard
+  /// reads it through the User row rather than trusting this column alone, so
+  /// zeroing it on verification is housekeeping and not the thing that grants
+  /// spendability. Were it the latter, a bonus credited in the same instant a
+  /// KYC decision commits would stay locked forever — there is no second
+  /// release event to repair it.
+  ///
+  /// A CHECK constraint keeps it within [0, balanceCents]. See the migration.
+  lockedCents BigInt @default(0)
 
   entries LedgerEntry[]
 

@@ -62,7 +62,7 @@ async function createUser(email: string) {
   await request(app)
     .post('/api/v1/auth/register')
     .set('Origin', ORIGIN)
-    .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD });
+    .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD, phone: '08030000000' });
   const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
   const agent = request.agent(app);
   const res = await agent
@@ -75,17 +75,32 @@ async function createUser(email: string) {
 /** A verified investor with a funded wallet and a payout account past its hold. */
 async function investor(
   email: string,
-  options: { balanceCents?: bigint; withAccount?: boolean; accountAgeMs?: number } = {},
+  options: {
+    balanceCents?: bigint;
+    withAccount?: boolean;
+    accountAgeMs?: number;
+    /** Leave them unverified, as most investors now are. */
+    verified?: boolean;
+    /** Referral earnings held pending verification. */
+    lockedCents?: bigint;
+  } = {},
 ) {
-  const { balanceCents = 100_000n, withAccount = true, accountAgeMs = 48 * 60 * 60 * 1000 } =
-    options;
+  const {
+    balanceCents = 100_000n,
+    withAccount = true,
+    accountAgeMs = 48 * 60 * 60 * 1000,
+    verified = true,
+    lockedCents = 0n,
+  } = options;
 
   const { agent, userId } = await createUser(email);
-  await prisma.user.update({
-    where: { id: userId },
-    data: { kycStatus: 'VERIFIED', kycVerifiedAt: new Date() },
-  });
-  await prisma.wallet.create({ data: { userId, balanceCents } });
+  if (verified) {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { kycStatus: 'VERIFIED', kycVerifiedAt: new Date() },
+    });
+  }
+  await prisma.wallet.create({ data: { userId, balanceCents, lockedCents } });
 
   if (withAccount) {
     await prisma.payoutAccount.create({
@@ -146,12 +161,56 @@ describe('requesting a withdrawal', () => {
     expect(await prisma.withdrawal.count()).toBe(0);
   });
 
-  it('refuses an unverified investor', async () => {
-    const { agent, userId } = await createUser('unverified@example.com');
-    await prisma.wallet.create({ data: { userId, balanceCents: 100_000n } });
+  it('pays an unverified investor their own money', async () => {
+    // This was a 403 KYC_REQUIRED. It is their money; holding it hostage to a
+    // document check is the frustration this whole change removes.
+    const { agent } = await investor('unverified@example.com', { verified: false });
     const res = await withdraw(agent, '5000');
-    expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe('KYC_REQUIRED');
+    expect(res.status).toBe(201);
+  });
+
+  it('will not let an unverified investor withdraw a locked referral bonus', async () => {
+    // $250 deposited plus a $20 bonus earned before verifying. The whole $270
+    // shows in the balance; only $250 may leave.
+    const { agent, userId } = await investor('mixed@example.com', {
+      verified: false,
+      balanceCents: 27_000n,
+      lockedCents: 2_000n,
+    });
+
+    const overreach = await withdraw(agent, '26000');
+    expect(overreach.status).toBe(422);
+    expect(overreach.body.error.code).toBe('INSUFFICIENT_FUNDS');
+    expect(overreach.body.error.message).toMatch(/referral/i);
+    expect(await prisma.withdrawal.count()).toBe(0);
+
+    const allowed = await withdraw(agent, '25000');
+    expect(allowed.status).toBe(201);
+
+    const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId } });
+    expect(wallet.balanceCents).toBe(2_000n);
+    expect(wallet.lockedCents).toBe(2_000n);
+  });
+
+  it('frees that bonus the moment the identity check passes', async () => {
+    const { agent, userId } = await investor('unlocks@example.com', {
+      verified: false,
+      balanceCents: 2_000n,
+      lockedCents: 2_000n,
+    });
+
+    // Refused while the lock binds...
+    expect((await withdraw(agent, '2000')).status).toBe(422);
+
+    // ...and allowed once it does not. The lock is advisory: the guard reads it
+    // through the User row, so verification alone is enough even before the
+    // column is zeroed. That is what stops a bonus credited in the same instant
+    // as a decision being stranded forever.
+    await prisma.user.update({
+      where: { id: userId },
+      data: { kycStatus: 'VERIFIED', kycVerifiedAt: new Date() },
+    });
+    expect((await withdraw(agent, '2000')).status).toBe(201);
   });
 
   // The destination is what an attacker changes. The change already emails the
@@ -281,6 +340,31 @@ describe('requesting a withdrawal', () => {
     );
     expect(created).toHaveLength(1);
     expect(await balanceOf(userId)).toBe(1_000n);
+  });
+
+  it('cannot be raced into spending locked money either', async () => {
+    // The guard moved from a Prisma `where` into raw SQL when it had to compare
+    // across two columns and a joined row. A lost race stopped throwing P2025
+    // and started returning zero rows, so this is the test that proves the
+    // guard survived the conversion rather than quietly becoming advisory.
+    const { agent, userId } = await investor('lockedrace@example.com', {
+      verified: false,
+      balanceCents: 12_000n,
+      lockedCents: 6_000n,
+    });
+
+    const results = await Promise.allSettled([
+      withdraw(agent, '6000'),
+      withdraw(agent, '6000'),
+    ]);
+    const created = results.filter(
+      (r) => r.status === 'fulfilled' && r.value.status === 201,
+    );
+    expect(created).toHaveLength(1);
+
+    const wallet = await prisma.wallet.findUniqueOrThrow({ where: { userId } });
+    expect(wallet.balanceCents).toBe(6_000n);
+    expect(wallet.lockedCents).toBe(6_000n);
   });
 
   it('never leaves the balance negative', async () => {

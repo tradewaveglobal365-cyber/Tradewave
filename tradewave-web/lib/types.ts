@@ -53,6 +53,14 @@ export interface PublicUser {
   role: Role;
   emailVerified: boolean;
   kycStatus: KycStatus;
+  /**
+   * Whether Settings may still change the name.
+   *
+   * Sent by the API rather than derived here: the rule depends on whether a
+   * payout account exists, which the browser cannot see. Deriving it from
+   * kycStatus alone would render an editable field the API then refuses.
+   */
+  nameEditable: boolean;
   referralCode: string;
   createdAt: string;
 }
@@ -82,6 +90,8 @@ export interface ReferralSummary {
   investedReferrals: number;
   /** Total earned, in cents. Summed from the ledger, never stored. */
   earnedCents: string;
+  /** Of that, how much is held until identity is verified. "0" once verified. */
+  lockedCents: string;
   /** Basis points of each invitee's first investment. 100 = 1%. */
   bonusBps: number;
 }

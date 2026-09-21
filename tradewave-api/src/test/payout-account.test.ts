@@ -33,7 +33,7 @@ async function createUser(email: string) {
   await request(app)
     .post('/api/v1/auth/register')
     .set('Origin', ORIGIN)
-    .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD });
+    .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD, phone: '08030000000' });
   const token = new URL(verifyUrls.at(-1)!).searchParams.get('token')!;
   const agent = request.agent(app);
   const res = await agent
@@ -60,15 +60,45 @@ const account = (over: Record<string, string> = {}) => ({
 });
 
 describe('reaching the payout account', () => {
-  it('refuses an unverified user — there is no verified name to check against', async () => {
-    const { agent } = await createUser('unverified@example.com');
-    const res = await agent
+  it('accepts one from an unverified user, then freezes their name', async () => {
+    // This used to 403, on the grounds that there was no verified name to check
+    // the account against. There still is not — but the name is now FROZEN the
+    // moment an account is saved, which is what closes the hole that gate was
+    // really covering: resolve a stranger's account, rename yourself to match
+    // it, withdraw there. The rename is the step that now fails.
+    const { agent, userId } = await createUser('unverified@example.com');
+
+    await agent
       .put('/api/v1/wallet/payout-account')
       .set('Origin', ORIGIN)
-      .send(account());
-    expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe('KYC_REQUIRED');
-    expect(await prisma.payoutAccount.count()).toBe(0);
+      .send(account())
+      .expect(200);
+    expect(await prisma.payoutAccount.count()).toBe(1);
+
+    const renamed = await agent
+      .patch('/api/v1/auth/me')
+      .set('Origin', ORIGIN)
+      .send({ firstName: 'Musa', lastName: 'Ibrahim' });
+    expect(renamed.status).toBe(422);
+    expect(renamed.body.error.fields.firstName).toMatch(/paid to an account in this name/i);
+
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(row.firstName).toBe('Joshua');
+  });
+
+  it('lets an unverified user fix their name BEFORE they add an account', async () => {
+    // The freeze must not become a trap for an honest typo. Up to the moment
+    // money has a destination, a self-asserted name is still just a claim.
+    const { agent, userId } = await createUser('typo@example.com');
+
+    await agent
+      .patch('/api/v1/auth/me')
+      .set('Origin', ORIGIN)
+      .send({ firstName: 'Joshua', lastName: 'Okogie' })
+      .expect(200);
+
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    expect(row.lastName).toBe('Okogie');
   });
 
   it('returns null before one is added', async () => {

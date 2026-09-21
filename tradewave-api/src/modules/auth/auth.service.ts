@@ -43,11 +43,19 @@ export interface PublicUser {
   role: User['role'];
   emailVerified: boolean;
   kycStatus: User['kycStatus'];
+  /**
+   * Whether Settings may still change the name.
+   *
+   * Sent rather than derived in the browser because the rule now depends on
+   * something the browser cannot see — whether a payout account exists — and a
+   * frontend that guesses it renders an editable field the API will refuse.
+   */
+  nameEditable: boolean;
   referralCode: string;
   createdAt: Date;
 }
 
-export function toPublicUser(user: User): PublicUser {
+export function toPublicUser(user: User, nameEditable: boolean): PublicUser {
   return {
     id: user.id,
     email: user.email,
@@ -59,9 +67,28 @@ export function toPublicUser(user: User): PublicUser {
     role: user.role,
     emailVerified: user.emailVerifiedAt !== null,
     kycStatus: user.kycStatus,
+    nameEditable,
     referralCode: user.referralCode,
     createdAt: user.createdAt,
   };
+}
+
+/**
+ * Resolves the name lock, including the part that needs a second read.
+ *
+ * Only reaches the database when kycStatus alone has not already decided it,
+ * so the common verified case costs nothing.
+ */
+export async function isNameEditable(
+  userId: string,
+  kycStatus: KycStatus,
+): Promise<boolean> {
+  if (!canEditName(kycStatus)) return false;
+  const account = await prisma.payoutAccount.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+  return account === null;
 }
 
 const verifyUrl = (token: string) => `${env.WEB_ORIGIN}/verify-email?token=${token}`;
@@ -138,7 +165,7 @@ export async function register(input: RegisterInput): Promise<void> {
     passwordHash,
     firstName: input.firstName,
     lastName: input.lastName,
-    phone: input.phone ?? null,
+    phone: input.phone,
     country: input.country,
     referredById,
     referredAt: referredById ? new Date() : null,
@@ -622,7 +649,11 @@ export async function getUserById(userId: string): Promise<User> {
 export { revokeAllSessions };
 
 /**
- * Whether this user may still change the name on their account.
+ * Whether identity verification alone leaves the name editable.
+ *
+ * This is HALF the rule — the other half is whether a payout account exists,
+ * which needs a second read. Use isNameEditable() for the answer; this is
+ * exported only because the KYC half is worth naming on its own.
  *
  * The name is sent to the identity provider as expected_details so a mismatch
  * against the document is flagged. Once a document has been checked against a
@@ -651,14 +682,23 @@ export async function updateProfile(
     (input.firstName !== undefined && input.firstName !== user.firstName) ||
     (input.lastName !== undefined && input.lastName !== user.lastName);
 
-  if (changingName && !canEditName(user.kycStatus)) {
+  const editable = await isNameEditable(userId, user.kycStatus);
+
+  if (changingName && !editable) {
     // Rejected rather than ignored. A settings form that appears to save a new
     // name and does not is worse than one that explains why it cannot.
+    //
+    // The payout-account case is the one that is a control rather than a
+    // consequence: setPayoutAccount only accepts a bank account in this name,
+    // so a name that stayed editable afterwards would let somebody resolve a
+    // stranger's account, rename themselves to match it, and withdraw there.
+    // Verification used to close that door by being mandatory; it no longer is.
     throw validationFailed({
-      firstName:
-        user.kycStatus === 'PENDING'
+      firstName: !canEditName(user.kycStatus)
+        ? user.kycStatus === 'PENDING'
           ? 'Locked while your identity check is in progress.'
-          : 'Locked: your identity is verified against this name. Contact support to change it.',
+          : 'Locked: your identity is verified against this name. Contact support to change it.'
+        : 'Locked: money is paid to an account in this name. Contact support to change it.',
     });
   }
 
@@ -667,12 +707,10 @@ export async function updateProfile(
     data: {
       ...(input.firstName !== undefined ? { firstName: input.firstName } : {}),
       ...(input.lastName !== undefined ? { lastName: input.lastName } : {}),
-      // An empty string means "remove it", which is distinct from the field
-      // being absent, which means "leave it alone".
-      ...(input.phone !== undefined ? { phone: input.phone === '' ? null : input.phone } : {}),
+      ...(input.phone !== undefined ? { phone: input.phone } : {}),
     },
   });
 
   logger.info({ userId, changedName: changingName }, 'Profile updated');
-  return toPublicUser(updated);
+  return toPublicUser(updated, editable);
 }

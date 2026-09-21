@@ -77,6 +77,15 @@ export default async function InvestorPage({
             <p className="text-[1.75rem] leading-none font-semibold tracking-[-0.02em] tabular-nums text-foreground">
               {formatUsd(investor.balanceCents)}
             </p>
+            {/* Staff answering "why was my withdrawal refused?" need to see the
+                split, not just the total — it is the first thing they will be
+                asked and the ledger alone does not show it. */}
+            {investor.lockedCents !== '0' ? (
+              <p className="mt-1.5 text-[0.8125rem] text-muted-foreground">
+                {formatUsd(investor.lockedCents)} locked &middot; referral earnings,
+                released when they verify
+              </p>
+            ) : null}
             {investor.entries.length === 0 ? (
               <p className="mt-4 text-[0.8125rem] text-muted-foreground">
                 No ledger entries yet.

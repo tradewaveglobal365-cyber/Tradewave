@@ -114,7 +114,7 @@ export default async function PropertyDetailPage({
 
           <div className="mt-6 border-t border-hairline pt-6">
             {isOpen ? (
-              <InvestPanel property={property} walletBalanceCents={wallet?.balanceCents ?? '0'} />
+              <InvestPanel property={property} walletBalanceCents={wallet?.availableCents ?? '0'} />
             ) : (
               <div className="rounded-lg bg-gold-100 px-4 py-3.5 text-center">
                 <p className="text-[0.8125rem] font-medium text-brand-900">

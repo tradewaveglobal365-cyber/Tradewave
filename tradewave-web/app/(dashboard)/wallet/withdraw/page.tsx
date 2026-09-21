@@ -39,7 +39,7 @@ export default async function WithdrawPage() {
       </p>
 
       <div className="mt-6 rounded-xl border border-hairline bg-surface p-5 sm:p-6">
-        <WithdrawPanel user={user} context={context} />
+        <WithdrawPanel context={context} />
       </div>
 
       <p className="mt-4 flex items-start gap-2 text-[0.75rem] leading-relaxed text-muted-foreground">

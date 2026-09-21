@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { isCommonPassword } from '../../lib/common-passwords';
 import { referralCodePattern } from '../../lib/crypto';
+import { normalizePhone, phonePattern } from '../../lib/phone';
 
 /**
  * ─────────────────────────────────────────────────────────────────────────────
@@ -37,17 +38,29 @@ const name = (label: string) =>
     .max(50, `${label} is too long`)
     .regex(/^[\p{L}\p{M}'\- .]+$/u, `${label} contains invalid characters`);
 
+/**
+ * Required, and stored in E.164.
+ *
+ * Optional until now, which left us unable to reach a meaningful share of
+ * investors about their own money. There is still no OTP — the number is
+ * captured, not proven — so the only cost to the person signing up is one
+ * field, and normalising it here means support can find them by whatever they
+ * read out over the phone. See lib/phone.
+ */
+const phone = z
+  .string({ error: 'Phone number is required' })
+  .trim()
+  .min(1, 'Phone number is required')
+  .regex(phonePattern, 'Enter a valid phone number')
+  .transform(normalizePhone)
+  .refine((v): v is string => v !== null, 'Enter a valid phone number');
+
 export const registerSchema = z.object({
   firstName: name('First name'),
   lastName: name('Last name'),
   email,
   password,
-  phone: z
-    .string()
-    .trim()
-    .regex(/^\+?[0-9\s\-()]{7,20}$/, 'Enter a valid phone number')
-    .optional()
-    .or(z.literal('').transform(() => undefined)),
+  phone,
   country: z.string().trim().length(2, 'Use a 2-letter country code').toUpperCase().default('NG'),
   // An invalid code must never block a signup — it is normalised here and
   // silently ignored downstream if it does not resolve.
@@ -125,11 +138,10 @@ export const updateProfileSchema = z
   .object({
     firstName: name('First name'),
     lastName: name('Last name'),
-    phone: z
-      .string()
-      .trim()
-      .regex(/^\+?[0-9\s\-()]{7,20}$/, 'Enter a valid phone number')
-      .or(z.literal('')),
+    // Changeable, but no longer clearable: it is required to register, so
+    // letting Settings blank it would leave an account in a state the signup
+    // form will not produce, and us with no way to reach them.
+    phone,
   })
   .partial();
 

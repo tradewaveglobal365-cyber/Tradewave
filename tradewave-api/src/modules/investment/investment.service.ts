@@ -1,4 +1,3 @@
-import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { computeAccrual, addMonths } from './accrual';
 import { formatUsd } from '../../lib/money';
@@ -7,9 +6,9 @@ import { env } from '../../config/env';
 import { logger } from '../../lib/logger';
 import { emailService } from '../../services/email';
 import { creditReferralBonus, notifyReferralBonus } from '../referral/referral.service';
+import { debitSpendable } from '../wallet/wallet.service';
 import {
   belowMinimumInvestment,
-  insufficientFunds,
   notFound,
   propertyUnavailable,
 } from '../../lib/errors';
@@ -150,19 +149,14 @@ export async function createInvestment(
   const result = await prisma.$transaction(async (tx) => {
     // ── 1. Debit the wallet, atomically ──────────────────────────────────
     // The balance filter sits in WHERE, so a concurrent request that already
-    // spent the money finds no matching row and throws P2025.
-    let debited;
-    try {
-      debited = await tx.wallet.update({
-        where: { id: wallet.id, balanceCents: { gte: amountCents } },
-        data: { balanceCents: { decrement: amountCents } },
-      });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
-        throw insufficientFunds();
-      }
-      throw err;
-    }
+    // spent the money finds no matching row. Locked referral earnings are not
+    // reachable here either — see debitSpendable.
+    const balanceAfterCents = await debitSpendable(tx, {
+      walletId: wallet.id,
+      amountCents,
+      verb: 'invested',
+      shortfallMessage: 'Your wallet balance is not enough for this investment.',
+    });
 
     // ── 2. Take the allocation, atomically ───────────────────────────────
     // Raw SQL because the comparison needs arithmetic on two columns, which
@@ -200,7 +194,7 @@ export async function createInvestment(
         walletId: wallet.id,
         type: 'INVESTMENT',
         amountCents: -amountCents, // debits are negative
-        balanceAfterCents: debited.balanceCents,
+        balanceAfterCents,
         reference: `inv_${investment.id}_${generateToken().slice(0, 12)}`,
         description: `Investment in ${property.title}`,
         investmentId: investment.id,
@@ -222,7 +216,7 @@ export async function createInvestment(
       await tx.property.update({ where: { id: propertyId }, data: { status: 'FUNDED' } });
     }
 
-    return { investment, balanceAfterCents: debited.balanceCents, referralBonus };
+    return { investment, balanceAfterCents, referralBonus };
   });
 
   // Whoever invited them earned something. After the commit, for the same
@@ -233,6 +227,7 @@ export async function createInvestment(
       referrerId: result.referralBonus.referrerId,
       investorId: userId,
       bonusCents: result.referralBonus.bonusCents,
+      locked: result.referralBonus.locked,
     });
   }
 

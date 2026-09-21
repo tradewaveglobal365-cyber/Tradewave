@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { AlertCircle, BadgeCheck, Landmark, RefreshCw, ShieldCheck } from 'lucide-react';
+import { AlertCircle, BadgeCheck, Landmark, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { setPayoutAccountSchema, type SetPayoutAccountValues } from '@/lib/schemas';
@@ -16,11 +16,12 @@ import type { PublicUser } from '@/lib/types';
 /**
  * The bank account money will eventually be paid out to.
  *
- * The account name must name the person who verified their identity — the API
- * decides that and this form only relays the refusal. The account-name field is
- * pre-filled with the verified name because in the overwhelmingly common case
- * the account IS in their own name, and making them retype it invites a typo
- * into the one field that gets checked.
+ * The account name must name the account holder — the API decides that and this
+ * form only relays the refusal. For a verified investor that name came off their
+ * document; for everybody else it is what they typed at signup, and saving here
+ * is what freezes it. The account-name field is pre-filled because in the
+ * overwhelmingly common case the account IS in their own name, and making them
+ * retype it invites a typo into the one field that gets checked.
  */
 export function PayoutAccountForm({
   user,
@@ -33,7 +34,6 @@ export function PayoutAccountForm({
   banks: Bank[] | null;
 }) {
   const router = useRouter();
-  const verified = user.kycStatus === 'VERIFIED';
   const [editing, setEditing] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -52,21 +52,13 @@ export function PayoutAccountForm({
     },
   });
 
-  // Identity first. Showing a form that the API is certain to refuse would be a
-  // worse experience than explaining why it is not here yet.
-  if (!verified) {
-    return (
-      <Notice
-        icon={<ShieldCheck className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
-        title="Verify your identity first"
-        body="Money can only be paid to an account in your own name, so we need to know your name before you can add one."
-      >
-        <Button asChild className="mt-3 h-10">
-          <Link href="/verify-identity">Verify identity</Link>
-        </Button>
-      </Notice>
-    );
-  }
+  // No identity gate. It used to be the first thing here, on the grounds that
+  // there was no verified name to check an account against — and there still is
+  // not for an unverified investor. What replaced it is that saving an account
+  // FREEZES the name on the profile, so a self-asserted name cannot be edited
+  // afterwards to match somebody else's bank account. The warning below is the
+  // user-facing half of that, and it has to be said BEFORE they save rather
+  // than discovered later in a disabled field.
 
   if (account && !editing) {
     return (
@@ -181,11 +173,32 @@ export function PayoutAccountForm({
         <Field
           label="Account name"
           error={errors.accountName?.message}
-          hint="It must be your own account — this is checked against your verified identity."
+          hint={
+            user.kycStatus === 'VERIFIED'
+              ? 'It must be your own account — this is checked against your verified identity.'
+              : `It must be your own account — this is checked against the name on your account, ${user.firstName} ${user.lastName}.`
+          }
         >
           <Input className="h-11 md:h-10" {...register('accountName')} />
         </Field>
       </div>
+
+      {/* Said before they save, never discovered afterwards in a greyed-out
+          field. Freezing somebody's name is a real consequence and they are
+          entitled to fix a typo first. */}
+      {user.nameEditable ? (
+        <p className="mt-3 flex items-start gap-1.5 text-[0.75rem] text-muted-foreground">
+          <AlertCircle className="mt-px size-3 shrink-0" />
+          <span>
+            Saving this locks the name on your account, so money can only ever go to an
+            account in that name. Check{' '}
+            <Link href="/settings" className="font-medium text-brand-700 underline">
+              your name
+            </Link>{' '}
+            is spelt exactly as your bank has it first.
+          </span>
+        </p>
+      ) : null}
 
       {formError ? (
         <div

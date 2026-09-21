@@ -28,10 +28,11 @@ export function ProfileForm({ user }: { user: PublicUser }) {
   const [formError, setFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  const nameEditable =
-    user.kycStatus === 'NOT_STARTED' ||
-    user.kycStatus === 'REJECTED' ||
-    user.kycStatus === 'EXPIRED';
+  // Sent by the API rather than derived here. The rule is no longer about
+  // kycStatus alone — it also depends on whether a payout account exists, which
+  // the browser cannot see, and guessing would render an editable field the API
+  // then refuses.
+  const nameEditable = user.nameEditable;
 
   const {
     register,
@@ -98,7 +99,9 @@ export function ProfileForm({ user }: { user: PublicUser }) {
           <p className="text-[0.75rem] leading-relaxed text-muted-foreground">
             {user.kycStatus === 'PENDING'
               ? 'Your name is locked while your identity check is in progress.'
-              : 'Your identity is verified against this name, so it can no longer be changed here. Contact support if it is wrong.'}
+              : user.kycStatus === 'VERIFIED'
+                ? 'Your identity is verified against this name, so it can no longer be changed here. Contact support if it is wrong.'
+                : 'Money is paid to a bank account in this name, so it can no longer be changed here. Contact support if it is wrong.'}
           </p>
         </div>
       ) : null}
@@ -107,9 +110,9 @@ export function ProfileForm({ user }: { user: PublicUser }) {
         <Field
           label="Phone"
           error={errors.phone?.message}
-          hint="Optional. Leave blank to remove it."
+          hint="How we reach you about your money. We never call to ask for a password."
         >
-          <Input type="tel" placeholder="+234 801 234 5678" {...register('phone')} />
+          <Input type="tel" placeholder="0801 234 5678" {...register('phone')} />
         </Field>
       </div>
 

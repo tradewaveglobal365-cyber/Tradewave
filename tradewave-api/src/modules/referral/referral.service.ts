@@ -36,6 +36,14 @@ export interface ReferralSummary {
   investedReferrals: number;
   /** Total earned, in cents. Summed from the ledger, never stored separately. */
   earnedCents: string;
+  /**
+   * How much of it cannot be spent yet, in cents. "0" once verified.
+   *
+   * Read off the wallet rather than recomputed from the ledger: the wallet is
+   * where the encumbrance actually lives, and a second derivation of the same
+   * figure is a second thing that can disagree with it.
+   */
+  lockedCents: string;
   bonusBps: number;
 }
 
@@ -51,7 +59,11 @@ export async function getSummary(userId: string): Promise<ReferralSummary> {
     await Promise.all([
       prisma.user.findUniqueOrThrow({
         where: { id: userId },
-        select: { referralCode: true },
+        select: {
+          referralCode: true,
+          kycStatus: true,
+          wallet: { select: { lockedCents: true } },
+        },
       }),
       prisma.user.count({ where: { referredById: userId } }),
       prisma.user.count({ where: { referredById: userId, emailVerifiedAt: { not: null } } }),
@@ -74,6 +86,12 @@ export async function getSummary(userId: string): Promise<ReferralSummary> {
     verifiedReferrals,
     investedReferrals,
     earnedCents: (earned._sum.amountCents ?? 0n).toString(),
+    // The lock is advisory and binds only while unverified, so a wallet whose
+    // column has not been zeroed yet must still report nothing held.
+    lockedCents: (user.kycStatus === 'VERIFIED'
+      ? 0n
+      : (user.wallet?.lockedCents ?? 0n)
+    ).toString(),
     bonusBps: REFERRAL_BONUS_BPS,
   };
 }
@@ -94,6 +112,8 @@ export async function getSummary(userId: string): Promise<ReferralSummary> {
 export interface ReferralBonusPaid {
   referrerId: string;
   bonusCents: bigint;
+  /** Whether it landed encumbered, which changes what the email may promise. */
+  locked: boolean;
 }
 
 export async function creditReferralBonus(
@@ -116,7 +136,7 @@ export async function creditReferralBonus(
 
   const referrer = await tx.user.findUnique({
     where: { id: investor.referredById },
-    select: { id: true, status: true },
+    select: { id: true, status: true, kycStatus: true },
   });
   // A suspended referrer is skipped for the same reason a suspended one cannot
   // attribute a signup: we are not paying an account we have shut off.
@@ -125,10 +145,34 @@ export async function creditReferralBonus(
   const bonusCents = referralBonusCents(params.principalCents);
   if (bonusCents <= 0n) return null;
 
+  /**
+   * Paid, but not spendable until we know who we paid.
+   *
+   * Identity verification no longer gates anything else — an investor can
+   * deposit, invest and withdraw their OWN money unverified, which is the whole
+   * point of opening the door. A referral bonus is different in kind: it is our
+   * money moving to someone on the strength of a third party's deposit, and
+   * paying it out to an unidentified account is the one thing an open door
+   * would otherwise turn into a business.
+   *
+   * So it lands in the balance and stays there, visible and locked, until a
+   * check passes. Locking on credit rather than checking on spend means the
+   * referrals page can show exactly what is waiting, which is a better argument
+   * for verifying than any banner.
+   */
+  const locked = referrer.kycStatus !== 'VERIFIED';
+
   const wallet = await tx.wallet.upsert({
     where: { userId: referrer.id },
-    update: { balanceCents: { increment: bonusCents } },
-    create: { userId: referrer.id, balanceCents: bonusCents },
+    update: {
+      balanceCents: { increment: bonusCents },
+      ...(locked ? { lockedCents: { increment: bonusCents } } : {}),
+    },
+    create: {
+      userId: referrer.id,
+      balanceCents: bonusCents,
+      lockedCents: locked ? bonusCents : 0n,
+    },
   });
 
   // Unique, so a replay cannot pay the same bonus twice — the constraint does
@@ -150,11 +194,12 @@ export async function creditReferralBonus(
       referrerId: referrer.id,
       investorId: params.investorId,
       bonusCents: bonusCents.toString(),
+      locked,
     },
     'Referral bonus credited',
   );
 
-  return { referrerId: referrer.id, bonusCents };
+  return { referrerId: referrer.id, bonusCents, locked };
 }
 
 /**
@@ -224,6 +269,7 @@ export async function notifyReferralBonus(params: {
   referrerId: string;
   investorId: string;
   bonusCents: bigint;
+  locked: boolean;
 }): Promise<void> {
   try {
     const [referrer, investor] = await Promise.all([
@@ -246,6 +292,7 @@ export async function notifyReferralBonus(params: {
       inviteeName: `${investor.firstName} ${investor.lastName.charAt(0)}.`,
       amount: formatUsd(params.bonusCents),
       rate: formatBonusRate(),
+      locked: params.locked,
       url: `${env.WEB_ORIGIN}/referrals`,
     });
   } catch (err) {

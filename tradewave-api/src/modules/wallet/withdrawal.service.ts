@@ -3,8 +3,8 @@ import { Prisma } from '@prisma/client';
 import type { WithdrawalStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { logger } from '../../lib/logger';
-import { env } from '../../config/env';
-import { formatNgn, formatUsd, koboFromUsdCents } from '../../lib/money';
+import { env, COLLECTION_COUNTRY } from '../../config/env';
+import { formatLocal, formatUsd, minorFromUsdCents } from '../../lib/money';
 import { getCurrentRate } from '../fx/fx.service';
 import { paymentProvider } from '../../services/payments';
 import {
@@ -13,6 +13,7 @@ import {
   getWindow,
 } from './withdrawal-window.service';
 import { emailService } from '../../services/email';
+import { debitSpendable } from './wallet.service';
 import {
   badRequest,
   belowMinimumWithdrawal,
@@ -118,6 +119,10 @@ export interface WithdrawalContext {
   minimumCents: string;
   feeCents: string;
   balanceCents: string;
+  /** Of the balance, referral earnings not yet unlocked by verification. */
+  lockedCents: string;
+  /** What may actually be withdrawn. The figure the form must validate on. */
+  availableCents: string;
   /** The payout schedule, and whether it is open right now. */
   window: {
     open: boolean;
@@ -148,7 +153,14 @@ export interface WithdrawalContext {
  */
 export async function getWithdrawalContext(userId: string): Promise<WithdrawalContext> {
   const [wallet, account, withdrawals, rate, window] = await Promise.all([
-    prisma.wallet.findUnique({ where: { userId }, select: { balanceCents: true } }),
+    prisma.wallet.findUnique({
+      where: { userId },
+      select: {
+        balanceCents: true,
+        lockedCents: true,
+        user: { select: { kycStatus: true } },
+      },
+    }),
     prisma.payoutAccount.findUnique({ where: { userId } }),
     prisma.withdrawal.findMany({
       where: { userId },
@@ -167,10 +179,18 @@ export async function getWithdrawalContext(userId: string): Promise<WithdrawalCo
 
   const live = withdrawals.find((w) => (LIVE_STATUSES as readonly string[]).includes(w.status));
 
+  const balanceCents = wallet?.balanceCents ?? 0n;
+  // Same rule as the debit guard, and it has to be: a screen that offers an
+  // amount the server then refuses is worse than one that never offered it.
+  const lockedCents =
+    !wallet || wallet.user.kycStatus === 'VERIFIED' ? 0n : wallet.lockedCents;
+
   return {
     minimumCents: WITHDRAWAL_MINIMUM_CENTS.toString(),
     feeCents: WITHDRAWAL_FEE_CENTS.toString(),
-    balanceCents: (wallet?.balanceCents ?? 0n).toString(),
+    balanceCents: balanceCents.toString(),
+    lockedCents: lockedCents.toString(),
+    availableCents: (balanceCents - lockedCents).toString(),
     window: {
       open: windowState.open,
       opensAt: windowState.opensAt,
@@ -237,20 +257,15 @@ export async function requestWithdrawal(
 
   const row = await prisma.$transaction(async (tx) => {
     // The balance filter sits in WHERE, so a concurrent request that already
-    // spent the money finds no matching row and throws P2025 — Postgres
-    // arbitrates rather than JavaScript.
-    let debited;
-    try {
-      debited = await tx.wallet.update({
-        where: { id: wallet.id, balanceCents: { gte: amountCents } },
-        data: { balanceCents: { decrement: amountCents } },
-      });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
-        throw insufficientFunds('Your wallet balance is not enough for this withdrawal.');
-      }
-      throw err;
-    }
+    // spent the money finds no matching row — Postgres arbitrates rather than
+    // JavaScript. It now also refuses to reach into locked referral earnings.
+    // See debitSpendable.
+    const balanceAfterCents = await debitSpendable(tx, {
+      walletId: wallet.id,
+      amountCents,
+      verb: 'withdrawn',
+      shortfallMessage: 'Your wallet balance is not enough for this withdrawal.',
+    });
 
     const withdrawal = await tx.withdrawal.create({
       data: {
@@ -275,7 +290,7 @@ export async function requestWithdrawal(
         walletId: wallet.id,
         type: 'WITHDRAWAL',
         amountCents: -amountCents, // debits are negative
-        balanceAfterCents: debited.balanceCents,
+        balanceAfterCents,
         reference: `wdr_${withdrawalId}`,
         description: `Withdrawal to ${account.bankName} ${mask(account.accountNumber)}`,
         withdrawalId,
@@ -442,7 +457,7 @@ export async function approveWithdrawal(
   // number sent — a stored kobo amount that gets rounded at the edge is a
   // reconciliation problem nobody can explain months later.
   const netCents = row.amountCents - row.feeCents;
-  const kobo = koboFromUsdCents(netCents, rate.minorPerUnit);
+  const kobo = minorFromUsdCents(netCents, rate.minorPerUnit);
   const destinationAmountMinor = (kobo / 100n) * 100n;
   if (destinationAmountMinor <= 0n) {
     throw badRequest('That withdrawal converts to less than one naira at the current rate.');
@@ -467,8 +482,8 @@ export async function approveWithdrawal(
     result = await paymentProvider.sendPayout({
       requestId: row.requestId,
       amountMinor: destinationAmountMinor,
-      currency: 'NGN',
-      country: 'NG',
+      currency: env.COLLECTION_CURRENCY,
+      country: COLLECTION_COUNTRY,
       bankCode: row.bankCode,
       bankName: row.bankName,
       accountNumber: row.accountNumber,
@@ -521,8 +536,8 @@ export async function approveWithdrawal(
       to: user.email,
       firstName: user.firstName,
       amount: formatUsd(row.amountCents),
-      naira: formatNgn(destinationAmountMinor),
-      rate: `${formatNgn(rate.minorPerUnit)} per $1`,
+      naira: formatLocal(destinationAmountMinor),
+      rate: `${formatLocal(rate.minorPerUnit)} per $1`,
       bankName: row.bankName,
       accountNumberMasked: mask(row.accountNumber),
       url: `${env.WEB_ORIGIN}/wallet`,
@@ -604,9 +619,9 @@ async function settle(
       amount: formatUsd(row.amountCents),
       bankName: row.bankName,
       accountNumberMasked: mask(row.accountNumber),
-      naira: row.destinationAmountMinor ? formatNgn(row.destinationAmountMinor) : undefined,
+      naira: row.destinationAmountMinor ? formatLocal(row.destinationAmountMinor) : undefined,
       rate: row.rateMinorPerUnit
-        ? `${formatNgn(row.rateMinorPerUnit)} per $1`
+        ? `${formatLocal(row.rateMinorPerUnit)} per $1`
         : undefined,
       url: `${env.WEB_ORIGIN}/wallet`,
     });

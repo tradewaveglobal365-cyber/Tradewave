@@ -42,7 +42,7 @@ async function registerUser(email: string, extra: Record<string, unknown> = {}) 
   return request(app)
     .post('/api/v1/auth/register')
     .set('Origin', ORIGIN)
-    .send({ firstName: 'Test', lastName: 'User', email, password: PASSWORD, ...extra });
+    .send({ firstName: 'Test', lastName: 'User', email, password: PASSWORD, phone: '08030000000', ...extra });
 }
 
 /** Registers and verifies, returning the agent that holds the session cookies. */
@@ -90,10 +90,32 @@ describe('registration', () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
       .set('Origin', ORIGIN)
-      .send({ firstName: 'A', lastName: 'B', email: 'weak@example.com', password: 'password123' });
+      .send({ firstName: 'A', lastName: 'B', email: 'weak@example.com', password: 'password123', phone: '08030000000' });
 
     expect(res.status).toBe(422);
     expect(res.body.error.fields.password).toMatch(/too common/i);
+  });
+
+  it('requires a phone number, and stores it normalised', async () => {
+    // Optional until we found we could not reach a meaningful share of
+    // investors about their own money. Still no OTP — captured, not proven.
+    const missing = await request(app)
+      .post('/api/v1/auth/register')
+      .set('Origin', ORIGIN)
+      .send({ firstName: 'A', lastName: 'B', email: 'nophone@example.com', password: PASSWORD });
+    expect(missing.status).toBe(422);
+    expect(missing.body.error.fields.phone).toMatch(/required/i);
+    expect(await prisma.user.count({ where: { email: 'nophone@example.com' } })).toBe(0);
+
+    await registerUser('local@example.com', { phone: '0803 000 0000' });
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: 'local@example.com' } });
+    expect(user.phone).toBe('+2348030000000');
+  });
+
+  it('rejects a phone number it cannot resolve', async () => {
+    const res = await registerUser('badphone@example.com', { phone: '0803000' });
+    expect(res.status).toBe(422);
+    expect(res.body.error.fields.phone).toMatch(/valid phone/i);
   });
 
   it('normalises email casing and whitespace', async () => {
@@ -405,7 +427,7 @@ describe('changing the password while signed in', () => {
     await request(app)
       .post('/api/v1/auth/register')
       .set('Origin', ORIGIN)
-      .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD });
+      .send({ firstName: 'Joshua', lastName: 'Okoghie', email, password: PASSWORD, phone: '08030000000' });
     const token = new URL(sent.verify.at(-1)!).searchParams.get('token')!;
     const agent = request.agent(app);
     const res = await agent
