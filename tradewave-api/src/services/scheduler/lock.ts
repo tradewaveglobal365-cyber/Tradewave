@@ -32,13 +32,19 @@ export const INSTANCE_ID = randomUUID();
 export async function claim(name: string, everyMs: number, leaseMs: number): Promise<boolean> {
   const now = new Date();
 
-  // Create the row on first sight, and only then. `update: {}` makes a repeat
-  // call a no-op rather than an accidental lock reset.
-  await prisma.scheduledJob.upsert({
-    where: { name },
-    create: { name },
-    update: {},
-  });
+  // Create the row on first sight, and only then.
+  //
+  // ON CONFLICT DO NOTHING rather than an upsert, because an upsert is a SELECT
+  // followed by an INSERT and this is precisely the moment two instances race:
+  // they boot together, tick together, and both find no row for a job that has
+  // never run. The loser's INSERT then violates the primary key and THROWS,
+  // which took down the claim itself — the one function whose whole job is to
+  // make concurrent instances safe. Postgres arbitrates instead, and a row that
+  // already exists is not an error here, it is the postcondition.
+  await prisma.$executeRaw`
+    INSERT INTO "ScheduledJob" ("name") VALUES (${name})
+    ON CONFLICT ("name") DO NOTHING
+  `;
 
   const { count } = await prisma.scheduledJob.updateMany({
     where: {
