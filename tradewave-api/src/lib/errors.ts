@@ -30,11 +30,16 @@ export const unauthorized = (message = 'You need to sign in to continue.') =>
   new AppError(401, 'UNAUTHORIZED', message);
 
 /**
- * The single error returned for a bad email AND a bad password. Distinguishing
- * them would let an attacker enumerate which emails have accounts.
+ * The single error returned for an unknown account AND a bad password.
+ * Distinguishing them would let an attacker enumerate who has an account.
+ *
+ * Says neither "email" nor "phone number": sign-in now takes either, and an
+ * identifier that matches two accounts — legal, since User.phone is not unique
+ * — lands here as well. Naming one credential would be wrong two ways out of
+ * three.
  */
 export const invalidCredentials = () =>
-  new AppError(401, 'INVALID_CREDENTIALS', 'Incorrect email or password.');
+  new AppError(401, 'INVALID_CREDENTIALS', "Those details don't match an account.");
 
 export const accountLocked = (until: Date) =>
   new AppError(

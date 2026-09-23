@@ -51,7 +51,7 @@ async function createAdmin(email: string) {
   await agent
     .post('/api/v1/auth/login')
     .set('Origin', ORIGIN)
-    .send({ email, password: PASSWORD })
+    .send({ identifier: email, password: PASSWORD })
     .expect(200);
   return { agent, userId };
 }

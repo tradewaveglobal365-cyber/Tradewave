@@ -1,6 +1,7 @@
 import rateLimit, { ipKeyGenerator, type Options } from 'express-rate-limit';
 import type { Request } from 'express';
 import { isTest } from '../config/env';
+import { normalizePhone } from '../lib/phone';
 
 /**
  * Rate limits are stored in memory, which is correct for a single instance but
@@ -26,15 +27,32 @@ function limiter(opts: Partial<Options> & { windowMs: number; limit: number }) {
 }
 
 /**
- * Keys on the submitted email so one attacker cannot lock out a whole office NAT.
+ * Keys on the submitted account identifier so one attacker cannot lock out a
+ * whole office NAT.
+ *
+ * Reads `identifier` first and `email` second: /auth/forgot-password now takes
+ * either an address or a phone number, and `email` is still accepted there as a
+ * transitional alias (see modules/auth/schemas.ts). /auth/resend-verification
+ * is still email-only and lands on the second branch.
+ *
+ * A phone number is NORMALISED before it becomes a key. This runs before
+ * validateBody, so what arrives is raw — and without normalising, 0803 000 0000,
+ * +2348030000000 and 234-803-000-0000 are three buckets against one account,
+ * which multiplies a 3-per-hour reset limit by however many spellings somebody
+ * can be bothered to type.
  *
  * The IP fallback must go through ipKeyGenerator: it normalises IPv6 to a /64
  * subnet, otherwise a client with a v6 prefix gets a fresh bucket per address
  * and the limit is trivially bypassed.
  */
-const byEmail = (req: Request): string => {
-  const email = (req.body as { email?: unknown } | undefined)?.email;
-  if (typeof email === 'string' && email.trim()) return `email:${email.toLowerCase().trim()}`;
+const byIdentifier = (req: Request): string => {
+  const body = req.body as { identifier?: unknown; email?: unknown } | undefined;
+  const raw = typeof body?.identifier === 'string' ? body.identifier : body?.email;
+
+  if (typeof raw === 'string' && raw.trim()) {
+    const value = raw.trim().toLowerCase();
+    return `id:${value.includes('@') ? value : (normalizePhone(value) ?? value)}`;
+  }
   return `ip:${ipKeyGenerator(req.ip ?? '0.0.0.0')}`;
 };
 
@@ -43,7 +61,7 @@ const byEmail = (req: Request): string => {
  *
  * The IP fallback exists only for a request that somehow reaches one of these
  * before auth has run, and it goes through ipKeyGenerator for exactly the
- * reason byEmail does: keying on a raw IPv6 address hands every client in a /64
+ * reason byIdentifier does: keying on a raw IPv6 address hands every client in a /64
  * its own bucket, so the limit is bypassed by picking a new address. Writing
  * `req.ip` here directly is what express-rate-limit warns about at boot.
  */
@@ -57,13 +75,13 @@ export const loginLimiter = limiter({ windowMs: 15 * 60 * 1000, limit: 10 });
 export const forgotPasswordLimiter = limiter({
   windowMs: 60 * 60 * 1000,
   limit: 3,
-  keyGenerator: byEmail,
+  keyGenerator: byIdentifier,
 });
 
 export const resendVerificationLimiter = limiter({
   windowMs: 60 * 60 * 1000,
   limit: 3,
-  keyGenerator: byEmail,
+  keyGenerator: byIdentifier,
 });
 
 /** Broad backstop for everything else. */

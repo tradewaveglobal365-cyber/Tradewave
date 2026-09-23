@@ -120,7 +120,7 @@ export async function changePassword(req: Request, res: Response): Promise<void>
 }
 
 export async function forgotPassword(req: Request, res: Response): Promise<void> {
-  await authService.forgotPassword((req.body as ForgotPasswordInput).email);
+  await authService.forgotPassword((req.body as ForgotPasswordInput).identifier);
   // Always 200, always the same message.
   res.json({
     message: 'If an account exists for that email, a reset link has been sent.',

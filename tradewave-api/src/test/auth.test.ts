@@ -172,7 +172,7 @@ describe('login', () => {
     const res = await request(app)
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'login@example.com', password: PASSWORD });
+      .send({ identifier: 'login@example.com', password: PASSWORD });
 
     expect(res.status).toBe(200);
     expect(readCookie(res, 'tw_access')).toBeTruthy();
@@ -184,12 +184,12 @@ describe('login', () => {
     const wrongPassword = await request(app)
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'real@example.com', password: 'not-the-password' });
+      .send({ identifier: 'real@example.com', password: 'not-the-password' });
 
     const unknownEmail = await request(app)
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'ghost@example.com', password: 'not-the-password' });
+      .send({ identifier: 'ghost@example.com', password: 'not-the-password' });
 
     expect(wrongPassword.status).toBe(unknownEmail.status);
     expect(wrongPassword.body).toEqual(unknownEmail.body);
@@ -202,21 +202,148 @@ describe('login', () => {
       const res = await request(app)
         .post('/api/v1/auth/login')
         .set('Origin', ORIGIN)
-        .send({ email: 'lock@example.com', password: 'wrong' });
+        .send({ identifier: 'lock@example.com', password: 'wrong' });
       expect(res.status).toBe(401);
     }
 
     const fifth = await request(app)
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'lock@example.com', password: 'wrong' });
+      .send({ identifier: 'lock@example.com', password: 'wrong' });
     expect(fifth.status).toBe(423);
 
     const correct = await request(app)
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'lock@example.com', password: PASSWORD });
+      .send({ identifier: 'lock@example.com', password: PASSWORD });
     expect(correct.status).toBe(423);
+  });
+});
+
+describe('signing in with a phone number', () => {
+  const signIn = (identifier: string, password = PASSWORD) =>
+    request(app).post('/api/v1/auth/login').set('Origin', ORIGIN).send({ identifier, password });
+
+  it('accepts every spelling of the same number', async () => {
+    const { user } = await registerAndVerify('phone@example.com', { phone: '08031234567' });
+
+    // Each of these is what the same person types on a different day. All four
+    // must normalise to +2348031234567 and reach one account.
+    for (const typed of ['08031234567', '+2348031234567', '2348031234567', '0803 123 4567']) {
+      const res = await signIn(typed);
+      expect(res.status, typed).toBe(200);
+      expect(res.body.user.id, typed).toBe(user.id);
+    }
+  });
+
+  it('refuses a number two accounts share, identically to an unknown one', async () => {
+    const shared = '08039998888';
+    await registerAndVerify('mum@example.com', { phone: shared });
+    await registerAndVerify('son@example.com', { phone: shared });
+
+    const ambiguous = await signIn(shared);
+    const unknown = await signIn('08037776666');
+
+    // Byte-identical, so nobody can use a sign-in attempt to learn that a
+    // number has two accounts on it. Both of them still have their addresses.
+    expect(ambiguous.status).toBe(401);
+    expect(ambiguous.body).toEqual(unknown.body);
+
+    // ...and the email addresses still work, which is the escape hatch the
+    // login form points them at.
+    await expect(signIn('mum@example.com').then((r) => r.status)).resolves.toBe(200);
+    await expect(signIn('son@example.com').then((r) => r.status)).resolves.toBe(200);
+  });
+
+  it('still signs in by email when the account has no phone number at all', async () => {
+    // Registered before the number became required. There is no route that
+    // produces this any more, so it is made directly.
+    const { user } = await registerAndVerify('legacy@example.com');
+    await prisma.user.update({ where: { id: user.id }, data: { phone: null } });
+
+    const res = await signIn('legacy@example.com');
+    expect(res.status).toBe(200);
+  });
+
+  it('counts failed phone attempts against the account, not the spelling', async () => {
+    await registerAndVerify('lockbyphone@example.com', { phone: '08035554444' });
+
+    // A different spelling each time. If the lockout keyed on the string that
+    // was typed rather than the account it resolved to, this would never lock.
+    const spellings = ['08035554444', '+2348035554444', '2348035554444', '0803 555 4444'];
+    for (const typed of spellings) {
+      expect((await signIn(typed, 'wrong')).status, typed).toBe(401);
+    }
+
+    expect((await signIn('08035554444', 'wrong')).status).toBe(423);
+    // Locked to the ACCOUNT: the right password on the email address is
+    // refused too.
+    expect((await signIn('lockbyphone@example.com')).status).toBe(423);
+  });
+
+  it('answers garbage the same way it answers a miss, never a 500', async () => {
+    await registerAndVerify('solid@example.com', { phone: '08032223333' });
+
+    // All of these reach login() and come back as an ordinary miss. That is
+    // the point: the schema deliberately does NOT reject a malformed
+    // identifier, because a different response for "that isn't a phone
+    // number" than for "no such account" is a free probe.
+    for (const junk of ['not-a-number', '@', '+', '00000', 'x'.repeat(200)]) {
+      const res = await signIn(junk);
+      expect(res.status, junk).toBe(401);
+    }
+
+    // An EMPTY identifier is the one exception, and it is a form error rather
+    // than a credentials check — there is nothing to be told about.
+    const blank = await signIn('   ');
+    expect(blank.status).toBe(422);
+  });
+
+  it('still accepts the old `email` field', async () => {
+    // TRANSITIONAL — delete this test together with the preprocess in
+    // modules/auth/schemas.ts, once no deployed browser sends `email`. It
+    // exists so the alias cannot be removed by accident while the web is still
+    // a deploy behind the API.
+    await registerAndVerify('legacyfield@example.com');
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .set('Origin', ORIGIN)
+      .send({ email: 'legacyfield@example.com', password: PASSWORD });
+
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('forgetting a password with a phone number', () => {
+  const forgot = (identifier: string) =>
+    request(app)
+      .post('/api/v1/auth/forgot-password')
+      .set('Origin', ORIGIN)
+      .send({ identifier });
+
+  it('sends the reset link to the address on the account', async () => {
+    await registerAndVerify('byphone@example.com', { phone: '08036667777' });
+
+    const res = await forgot('08036667777');
+    expect(res.status).toBe(200);
+    expect(sent.reset).toHaveLength(1);
+
+    // The link itself must work — there is no SMS, so a number gets you a
+    // reset only because we mail it to the address we already hold.
+    const reset = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .set('Origin', ORIGIN)
+      .send({ token: tokenFromUrl(sent.reset[0]!), password: 'a whole new passphrase' });
+    expect(reset.status).toBe(200);
+  });
+
+  it('issues nothing for a number two accounts share, and still returns 200', async () => {
+    await registerAndVerify('one@example.com', { phone: '08034445555' });
+    await registerAndVerify('two@example.com', { phone: '08034445555' });
+
+    const res = await forgot('08034445555');
+    expect(res.status).toBe(200);
+    expect(sent.reset).toHaveLength(0);
   });
 });
 
@@ -350,12 +477,12 @@ describe('password reset', () => {
     const real = await request(app)
       .post('/api/v1/auth/forgot-password')
       .set('Origin', ORIGIN)
-      .send({ email: 'known@example.com' });
+      .send({ identifier: 'known@example.com' });
 
     const fake = await request(app)
       .post('/api/v1/auth/forgot-password')
       .set('Origin', ORIGIN)
-      .send({ email: 'nobody@example.com' });
+      .send({ identifier: 'nobody@example.com' });
 
     expect(real.status).toBe(200);
     expect(fake.body).toEqual(real.body);
@@ -368,7 +495,7 @@ describe('password reset', () => {
     await request(app)
       .post('/api/v1/auth/forgot-password')
       .set('Origin', ORIGIN)
-      .send({ email: 'reset@example.com' });
+      .send({ identifier: 'reset@example.com' });
 
     const res = await request(app)
       .post('/api/v1/auth/reset-password')
@@ -384,13 +511,13 @@ describe('password reset', () => {
     const old = await request(app)
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'reset@example.com', password: PASSWORD });
+      .send({ identifier: 'reset@example.com', password: PASSWORD });
     expect(old.status).toBe(401);
 
     const fresh = await request(app)
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'reset@example.com', password: 'a whole new passphrase' });
+      .send({ identifier: 'reset@example.com', password: 'a whole new passphrase' });
     expect(fresh.status).toBe(200);
   });
 });
@@ -400,7 +527,7 @@ describe('CSRF origin check', () => {
     const res = await request(app)
       .post('/api/v1/auth/login')
       .set('Origin', 'https://evil.example.com')
-      .send({ email: 'a@b.co', password: PASSWORD });
+      .send({ identifier: 'a@b.co', password: PASSWORD });
 
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('FORBIDDEN');
@@ -443,7 +570,7 @@ describe('changing the password while signed in', () => {
     await agent
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email, password: PASSWORD })
+      .send({ identifier: email, password: PASSWORD })
       .expect(200);
     return agent;
   }
@@ -466,7 +593,7 @@ describe('changing the password while signed in', () => {
     await fresh
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'change@example.com', password: NEW_PASSWORD })
+      .send({ identifier: 'change@example.com', password: NEW_PASSWORD })
       .expect(200);
   });
 
@@ -477,7 +604,7 @@ describe('changing the password while signed in', () => {
     await request(app)
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'oldgone@example.com', password: PASSWORD })
+      .send({ identifier: 'oldgone@example.com', password: PASSWORD })
       .expect(401);
   });
 
@@ -496,7 +623,7 @@ describe('changing the password while signed in', () => {
     await request(app)
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'wrongcurrent@example.com', password: PASSWORD })
+      .send({ identifier: 'wrongcurrent@example.com', password: PASSWORD })
       .expect(200);
   });
 
@@ -561,7 +688,7 @@ describe('changing the password while signed in', () => {
     await request(app)
       .post('/api/v1/auth/forgot-password')
       .set('Origin', ORIGIN)
-      .send({ email: 'burnreset@example.com' })
+      .send({ identifier: 'burnreset@example.com' })
       .expect(200);
 
     await change(agent, PASSWORD, NEW_PASSWORD).expect(200);

@@ -117,7 +117,7 @@ const setStatus = (
 ) => act(staff, userId, 'status', { action, reason });
 
 const login = (email: string) =>
-  request(app).post('/api/v1/auth/login').set('Origin', ORIGIN).send({ email, password: PASSWORD });
+  request(app).post('/api/v1/auth/login').set('Origin', ORIGIN).send({ identifier: email, password: PASSWORD });
 
 const balanceOf = async (userId: string) =>
   (await prisma.wallet.findUniqueOrThrow({ where: { userId } })).balanceCents;
@@ -216,7 +216,7 @@ describe('restricting an account', () => {
     await fresh
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'restrict@example.com', password: PASSWORD })
+      .send({ identifier: 'restrict@example.com', password: PASSWORD })
       .expect(200);
 
     await fresh.get('/api/v1/wallet').expect(200);
@@ -233,7 +233,7 @@ describe('restricting an account', () => {
     await agent
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'frozen@example.com', password: PASSWORD })
+      .send({ identifier: 'frozen@example.com', password: PASSWORD })
       .expect(200);
 
     const property = await prisma.property.create({

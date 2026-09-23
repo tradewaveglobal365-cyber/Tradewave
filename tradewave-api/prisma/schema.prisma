@@ -170,6 +170,13 @@ model User {
   updatedAt DateTime @updatedAt
 
   @@index([referredById])
+  /// Sign-in accepts a phone number as well as an email address, so this is a
+  /// lookup key, not just a contact detail. NOT unique, deliberately: a unique
+  /// constraint would refuse a signup over a duplicate number — the exact
+  /// frustration the open-door work removed — and leak which numbers have
+  /// accounts. See auth.service.findUserByIdentifier for how the ambiguity is
+  /// settled instead.
+  @@index([phone])
 }
 
 model Session {
@@ -283,7 +290,11 @@ model ScheduledJob {
 }
 
 model LoginAttempt {
-  id        String   @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
+
+  /// The ACCOUNT's email when sign-in resolved one, and the raw string that was
+  /// typed when it did not — which may be a phone number. Kept under this name
+  /// so the index and its history survive; see auth.service.recordAttempt.
   email     String
   ipAddress String
   success   Boolean

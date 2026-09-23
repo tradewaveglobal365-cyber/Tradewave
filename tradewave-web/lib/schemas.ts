@@ -49,12 +49,22 @@ export const signupSchema = z.object({
   referralCode: z.string().trim().toUpperCase().optional().or(z.literal('')),
 });
 
+// Email address OR phone number, and checked no further than "not empty" —
+// the server decides which it is and whether it resolves to one account. See
+// the same field in tradewave-api/src/modules/auth/schemas.ts for why even the
+// API refuses to be stricter here.
+const identifier = z
+  .string({ error: 'Enter your email address or phone number' })
+  .trim()
+  .min(1, 'Enter your email address or phone number')
+  .max(254, 'That is too long');
+
 export const loginSchema = z.object({
-  email,
+  identifier,
   password: z.string({ error: 'Password is required' }).min(1, 'Password is required'),
 });
 
-export const forgotPasswordSchema = z.object({ email });
+export const forgotPasswordSchema = z.object({ identifier });
 
 export const resetPasswordSchema = z
   .object({

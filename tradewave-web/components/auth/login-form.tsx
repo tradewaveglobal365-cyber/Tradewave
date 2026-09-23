@@ -19,6 +19,10 @@ export function LoginForm() {
   const searchParams = useSearchParams();
   const [formError, setFormError] = useState<string | null>(null);
   const [needsVerification, setNeedsVerification] = useState<string | null>(null);
+  // Set only when the failed attempt was made with something that was not an
+  // email address, so the hint about shared numbers stays out of the way of
+  // everybody else.
+  const [triedPhone, setTriedPhone] = useState(false);
 
   const {
     register,
@@ -27,12 +31,13 @@ export function LoginForm() {
     formState: { errors, isSubmitting },
   } = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '' },
+    defaultValues: { identifier: '', password: '' },
   });
 
   async function onSubmit(values: LoginValues) {
     setFormError(null);
     setNeedsVerification(null);
+    setTriedPhone(false);
 
     try {
       await apiFetch<SessionResponse>('/auth/login', { method: 'POST', body: values });
@@ -42,8 +47,11 @@ export function LoginForm() {
       window.location.href = next?.startsWith('/') ? next : '/dashboard';
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.code === 'EMAIL_NOT_VERIFIED') {
-          setNeedsVerification(String(values.email));
+        // The resend page takes an address, so this branch is only usable
+        // when they signed in with one. /auth/login does not currently raise
+        // this code — requireActive does — so it is defensive either way.
+        if (err.code === 'EMAIL_NOT_VERIFIED' && String(values.identifier).includes('@')) {
+          setNeedsVerification(String(values.identifier));
           return;
         }
         if (err.fields) {
@@ -54,6 +62,7 @@ export function LoginForm() {
         }
       }
       setFormError(errorMessage(err));
+      setTriedPhone(!String(values.identifier).includes('@'));
     }
   }
 
@@ -65,7 +74,20 @@ export function LoginForm() {
           className="flex items-start gap-2.5 rounded-lg border border-destructive/25 bg-destructive/5 px-3.5 py-3 text-[0.8125rem] leading-snug text-destructive"
         >
           <AlertCircle className="mt-px size-4 shrink-0" />
-          <span>{formError}</span>
+          <span>
+            {formError}
+            {/* Shown after ANY failed attempt on a number, not only an
+                ambiguous one — which is what stops it being an oracle for
+                "this number has two accounts". A number can be shared by a
+                family here, and when it is, neither person can sign in with
+                it; this is the only way they would ever find that out. */}
+            {triedPhone ? (
+              <span className="mt-1 block opacity-80">
+                If more than one account uses that number, sign in with the email address
+                instead.
+              </span>
+            ) : null}
+          </span>
         </div>
       ) : null}
 
@@ -84,14 +106,17 @@ export function LoginForm() {
         </div>
       ) : null}
 
-      <Field label="Email" error={errors.email?.message}>
+      <Field label="Email or phone number" error={errors.identifier?.message}>
         {(props) => (
           <Input
             {...props}
-            {...register('email')}
-            type="email"
-            autoComplete="email"
-            placeholder="you@example.com"
+            {...register('identifier')}
+            // Not type="email": the browser would mark a phone number invalid
+            // and refuse to offer a saved one. autoComplete="username" is what
+            // password managers key a credential on when it is not an address.
+            type="text"
+            autoComplete="username"
+            placeholder="you@example.com or 0803 000 0000"
             autoFocus
           />
         )}

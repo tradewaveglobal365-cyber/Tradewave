@@ -22,6 +22,7 @@ import {
   type SessionContext,
 } from '../../services/token.service';
 import { formatBonusRate } from '../referral/referral.service';
+import { normalizePhone } from '../../lib/phone';
 import type { LoginInput, RegisterInput, UpdateProfileInput } from './schemas';
 
 const MAX_FAILED_ATTEMPTS = 5;
@@ -335,14 +336,52 @@ export async function resendVerification(email: string): Promise<void> {
   });
 }
 
+/**
+ * Resolves what somebody typed into the one account it identifies, or nothing.
+ *
+ * ── Why a phone number is allowed here at all ─────────────────────────────
+ * The number is required at registration and stored in E.164, and the people
+ * this product is for are far likelier to remember 0803 000 0000 than which
+ * address they signed up with. Collecting a number and then refusing it at the
+ * door was the same frustration the optional-KYC work removed everywhere else.
+ *
+ * ── Why '@' is the discriminator ──────────────────────────────────────────
+ * No phone number contains one, and normalizePhone already returns null for
+ * anything email-shaped. Cheaper and more obvious than two regexes that could
+ * disagree.
+ *
+ * ── Why exactly one match, or nobody ──────────────────────────────────────
+ * User.phone is NOT unique, deliberately: a unique constraint would refuse a
+ * signup over a duplicate number, which is both the frustration we are
+ * removing and a phone-number enumeration oracle on /register. Two people on
+ * one line is ordinary here — a family sharing it. So the ambiguity is settled
+ * at sign-in instead, and it is settled by refusing. Checking the password
+ * against both candidates is the naive alternative and is unsafe on a money
+ * platform: relatives who share a number AND a password would sign into each
+ * other's WALLET. Both of them still have their email addresses, and the login
+ * form says so after any failed attempt on a number.
+ */
+async function findUserByIdentifier(identifier: string): Promise<User | null> {
+  if (identifier.includes('@')) {
+    return prisma.user.findUnique({ where: { email: identifier } });
+  }
+
+  const phone = normalizePhone(identifier);
+  if (!phone) return null;
+
+  // take: 2 because the question is "is this ambiguous?", not "how many?".
+  const matches = await prisma.user.findMany({ where: { phone }, take: 2 });
+  return matches.length === 1 ? matches[0]! : null;
+}
+
 export async function login(input: LoginInput, ctx: SessionContext) {
-  const user = await prisma.user.findUnique({ where: { email: input.email } });
+  const user = await findUserByIdentifier(input.identifier);
 
   if (!user) {
     // Spend the same time we would on a real verify so response latency does
     // not reveal whether the account exists.
     await burnTimingBudget(input.password);
-    await recordAttempt(input.email, ctx, false);
+    await recordAttempt(input.identifier, ctx, false);
     throw invalidCredentials();
   }
 
@@ -364,7 +403,7 @@ export async function login(input: LoginInput, ctx: SessionContext) {
         lockedUntil: shouldLock ? new Date(Date.now() + LOCK_DURATION_MS) : null,
       },
     });
-    await recordAttempt(input.email, ctx, false);
+    await recordAttempt(user.email, ctx, false);
     if (shouldLock) {
       const until = new Date(Date.now() + LOCK_DURATION_MS);
       // The account owner is the one person who cannot see these attempts, and
@@ -396,7 +435,7 @@ export async function login(input: LoginInput, ctx: SessionContext) {
     data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
   });
 
-  await recordAttempt(input.email, ctx, true);
+  await recordAttempt(user.email, ctx, true);
   const session = await startSession(fresh, ctx);
 
   if (unseen) {
@@ -443,10 +482,22 @@ async function isUnseenDevice(userId: string, userAgent?: string): Promise<boole
   }
 }
 
-async function recordAttempt(email: string, ctx: SessionContext, success: boolean): Promise<void> {
+/**
+ * `identifier` is the ACCOUNT's email when we resolved one, and the raw string
+ * that was typed when we did not — which since sign-in accepts phone numbers
+ * may be a number. The column is still called `email`; renaming it would cost a
+ * migration and an index rebuild to describe an audit log nobody queries by
+ * shape. What matters is that a real account always appears here under one
+ * spelling, so the attempts against it group.
+ */
+async function recordAttempt(
+  identifier: string,
+  ctx: SessionContext,
+  success: boolean,
+): Promise<void> {
   try {
     await prisma.loginAttempt.create({
-      data: { email, ipAddress: ctx.ipAddress ?? 'unknown', success },
+      data: { email: identifier, ipAddress: ctx.ipAddress ?? 'unknown', success },
     });
   } catch (err) {
     // Audit logging must never break the login path.
@@ -467,12 +518,19 @@ export async function startSession(user: User, ctx: SessionContext) {
 }
 
 /**
- * Always resolves, whether or not the email exists. The caller returns 200
+ * Always resolves, whether or not the account exists. The caller returns 200
  * unconditionally so this endpoint cannot be used to discover accounts.
+ *
+ * Takes an email address or a phone number, because somebody who signs in with
+ * their number and then forgets their password would otherwise be stranded at
+ * an email-only box. The reset LINK still goes to the address on the account —
+ * there is no SMS provider — which is why the web copy must not promise to
+ * send anything to whatever was typed. An ambiguous number resolves to nobody
+ * and falls into the same silent branch as an unknown one.
  */
-export async function forgotPassword(email: string): Promise<void> {
+export async function forgotPassword(identifier: string): Promise<void> {
   await withMinimumDuration(ENUMERATION_FLOOR_MS, async () => {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await findUserByIdentifier(identifier);
     if (!user || user.status === 'SUSPENDED') return;
 
     const token = await createVerificationToken(user.id, 'PASSWORD_RESET', PASSWORD_RESET_TTL_MS);

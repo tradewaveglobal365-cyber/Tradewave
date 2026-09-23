@@ -220,7 +220,7 @@ describe('creating an investment', () => {
     const login = await request(app)
       .post('/api/v1/auth/login')
       .set('Origin', ORIGIN)
-      .send({ email: 'unverified@example.com', password: PASSWORD });
+      .send({ identifier: 'unverified@example.com', password: PASSWORD });
 
     const cookie = (login.headers['set-cookie'] as unknown as string[]) ?? [];
     const res = await request(app)
