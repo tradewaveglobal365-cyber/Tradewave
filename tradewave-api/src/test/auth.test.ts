@@ -298,20 +298,6 @@ describe('signing in with a phone number', () => {
     const blank = await signIn('   ');
     expect(blank.status).toBe(422);
   });
-
-  it('still accepts the old `email` field', async () => {
-    // TRANSITIONAL — delete this test together with the preprocess in
-    // modules/auth/schemas.ts, once no deployed browser sends `email`. It
-    // exists so the alias cannot be removed by accident while the web is still
-    // a deploy behind the API.
-    await registerAndVerify('legacyfield@example.com');
-    const res = await request(app)
-      .post('/api/v1/auth/login')
-      .set('Origin', ORIGIN)
-      .send({ email: 'legacyfield@example.com', password: PASSWORD });
-
-    expect(res.status).toBe(200);
-  });
 });
 
 describe('forgetting a password with a phone number', () => {

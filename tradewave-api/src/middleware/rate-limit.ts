@@ -30,10 +30,10 @@ function limiter(opts: Partial<Options> & { windowMs: number; limit: number }) {
  * Keys on the submitted account identifier so one attacker cannot lock out a
  * whole office NAT.
  *
- * Reads `identifier` first and `email` second: /auth/forgot-password now takes
- * either an address or a phone number, and `email` is still accepted there as a
- * transitional alias (see modules/auth/schemas.ts). /auth/resend-verification
- * is still email-only and lands on the second branch.
+ * Reads `identifier` first and `email` second: /auth/forgot-password takes
+ * either an address or a phone number under `identifier`, while
+ * /auth/resend-verification is still email-only and lands on the second
+ * branch.
  *
  * A phone number is NORMALISED before it becomes a key. This runs before
  * validateBody, so what arrives is raw — and without normalising, 0803 000 0000,

@@ -90,27 +90,10 @@ const identifier = z
   // Harmless for digits and '+', and it is what makes the email lookup match.
   .toLowerCase();
 
-/**
- * Accepts `email` as a deprecated alias for `identifier`.
- *
- * TRANSITIONAL — the web sent `email` until 2026-09-23. The API and the web
- * deploy separately and minutes apart, so without this, every sign-in from a
- * browser still holding the old bundle fails on a missing field for the length
- * of the gap. Delete this and both `z.preprocess` wrappers once the Vercel
- * deploy carrying `identifier` is live.
- */
-const acceptLegacyEmailField = (v: unknown): unknown =>
-  v && typeof v === 'object' && !('identifier' in v) && 'email' in v
-    ? { ...v, identifier: (v as { email: unknown }).email }
-    : v;
-
-export const loginSchema = z.preprocess(
-  acceptLegacyEmailField,
-  z.object({
-    identifier,
-    password: z.string({ error: 'Password is required' }).min(1, 'Password is required'),
-  }),
-);
+export const loginSchema = z.object({
+  identifier,
+  password: z.string({ error: 'Password is required' }).min(1, 'Password is required'),
+});
 
 /**
  * CONTRACT MIRROR — see tradewave-web/lib/schemas.ts.
@@ -135,10 +118,7 @@ export const changePasswordSchema = z
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
-export const forgotPasswordSchema = z.preprocess(
-  acceptLegacyEmailField,
-  z.object({ identifier }),
-);
+export const forgotPasswordSchema = z.object({ identifier });
 
 export const resetPasswordSchema = z.object({
   token: z.string({ error: 'Reset token is required' }).min(1, 'Reset token is required'),
